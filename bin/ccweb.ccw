@@ -1,0 +1,98 @@
+@* Cesar Crusius' Literate Programming Toolkit.
+@<*@>=
+@<Global variables and utility functions@>
+@<Reading chunks@>
+@<Weaving chunks@>
+@<Weave file@>
+@ The chunks global variable is a table from the chunk title to the
+unprocessed list of lines in that chunk.  \vbox
+@<Global variables and utility functions@>={lua}
+local chunks = {}
+@ Code chunks are started by any line matching the chunkdef pattern.
+@<Global variables and utility functions@>={lua}
+local chunkdef = "^@@<%s*(.*)%s*@@>=.*$"
+@<Reading chunks@>={lua}
+local STARTS_CHUNK = 1
+local STARTS_DOC   = 2
+local function startssec(line)
+  if string.find(line,"@@ ",1,true) then return STARTS_DOC end
+  if string.find(line,chunkdef) then return STARTS_CHUNK end
+  return false
+end
+@ The readchunk function reads the chunk started by the line passed
+in as an argument, adds it to the respective entry in the chunks table, and
+returns the line following the chunk.
+@<Reading chunks@>={lua}
+local function readchunk(line,nextline)
+  local title = string.gsub(line,chunkdef,"%1")
+  if not chunks[title] then chunks[title] = {} end
+  line = nextline()
+  while line and not startssec(line) do
+    table.insert(chunks[title],line)
+    line = nextline()
+  end
+  return line
+end
+@ Finding a chunk reference inside a chunk line is slightly complicated by the
+fact that we have to escape the |@| sign. A good example of something that
+would not work without this is weaving |ccweb.ccw| itself. The other issue we
+have to deal with is that the |start| pattern is either a ``true'' one, or one
+where a bogus first character may be present.
+
+This function will return three values: the string preceding the chunk
+reference, the chunk title, and the rest of the string. Only the first will be
+non-|nil| when no chunks are referenced by the line.
+@<Global variables and utility functions@>={lua}
+local function findchunkref(line)
+  local start, startend = string.find(line,"^@@<")
+  if not start then
+    start, startend = string.find(line,"[^@@]@@<")
+    if not start then return line, nil, nil end
+    start = start + 1 -- The true start, past "[^@@]"
+  end
+
+  local finish = string.find(line,"[^@@]@@>",start)
+  if not finish then return line, nil, nil end
+
+  local pre   = string.sub(line,1,start-1)
+  local title = string.sub(line,startend+1,finish)
+  local post  = string.sub(line,finish+3)
+  return pre, title, post
+end
+@<Global variables and utility functions@>={lua}
+local function unquoteline(line)
+  return (string.gsub(line,"@@\(.\)","%1"))
+end
+@ XXX careful to preserve indents and newlines
+@<Weaving chunks@>={lua}
+local function printchunk(title,prefix)
+  local chunk = chunks[title]
+  assert(chunk,"Chunk '"..title.."' not found")
+
+  local idx, pre, title, line, refindent
+  local chunkindent = ""
+  for idx,line in pairs(chunk) do
+    io.write(chunkindent)
+    refindent = prefix
+    repeat
+      pre,title,line = findchunkref(line)
+      refindent = refindent .. string.gsub(pre,"."," ")
+      io.write(unquoteline(pre))
+      if title then printchunk(title,refindent) end
+    until not line
+    chunkindent = "\n"..prefix
+  end
+end
+@<Weave file@>={lua}
+input = arg[1]
+inputf, errmsg = io.open(input)
+assert(inputf, errmsg)
+
+nextline = inputf:lines()
+line = nextline()
+while line do
+  if startssec(line) == STARTS_CHUNK then line = readchunk(line,nextline)
+  else line = nextline() end
+end
+
+printchunk("*","")
