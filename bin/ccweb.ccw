@@ -221,6 +221,7 @@ The weaver is the program that reads a |ccweb| file and writes
 the \TeX{} documentation.
 @<*{ccweave.lua}@>=
 @<Common |ccweb| code@>
+@<|CCWEAVE| global variables@>
 @<|CCWEAVE| functions@>
 @<Weave a single section@>
 @<Main |CCWEAVE| procedure@>
@@ -229,8 +230,13 @@ following table lists the macros from |cwebmac.tex| we will use to typeset
 our documentation.
 \halign{\strut#\hfil&\quad#\hfil\cr
 \bf Macro & \bf What\cr
+|\4|        & Backspace one notch.\cr
+|\6|        & End of named section start.\cr
+|\B|        & Go into ``C mode.''\cr
 |\M#1| & Begin regular section number |#1|.\cr
 |\N#1#2#3.| & Begin starred section |#2|, with title |#3| and depth |#1|.\cr
+|\X#1:#2\X| & Begin name definition |#2|, for section |#1|.\cr
+|\Y|        & Begin a new paragraph before named code.\cr
 }
 @ The
 following table lists the macros from |eplain.tex| we will use to typeset
@@ -292,6 +298,7 @@ remainder = string.sub(noverb,2)
 local function weave_section(secno,section,file)
   @<Write section start@>
   @<Write section body@>
+  @<Write section code@>
 end
 @ @<Write section start@>={lua}
 if section["star"] then
@@ -304,11 +311,39 @@ for n,line in ipairs(section["body"]) do
   local texline,remainder,status = weave_unquote(line,nil)
   file:write(texline.."\n")
 end
+@ Before writing named sections we need to build a map from their
+names into which section they were first defined.
+@<|CCWEAVE| global variables@>={lua}
+local name_sec_map = {}
+@ @<|CCWEAVE| functions@>={lua}
+local function build_name_sec_map()
+  for n,section in ipairs(sections) do
+    local name = section["name"]
+    if name and not name_sec_map[name] then
+      name_sec_map[name] = n
+    end
+  end
+end
+@ @<Write preamble@>={lua}
+file:write("\\newbox\\cctanglebox\n")
+@ @<Write section code@>={lua}
+if section["name"] then
+  local name = section["name"]
+  local refsecno = name_sec_map[name]
+  assert(refsecno,"Section '"..name.."' does not seem to be defined anywhere.")
+  local quoted, rest, status = weave_unquote(name)
+  assert(status,"Cound not TeX-quote '"..name.."'.")
+  file:write("\\setbox\\cctanglebox\\hbox{"..quoted.."}\n")
+  file:write("\\Y\\B\\4\\X"..tostring(refsecno)..":\\box\\cctanglebox\\X${}")
+  if refsecno ~= secno then file:write("\\mathrel+") end
+  file:write("\\equiv{}$\\6\n")
+end
 @ @<Main |CCWEAVE| procedure@>={lua}
 read_ccweb_file(arg[1])
 
 local file=io.output()
 @<Write preamble@>
+build_name_sec_map()
 for n,section in ipairs(sections) do
   weave_section(n,section,file)
 end
