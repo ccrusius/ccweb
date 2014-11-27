@@ -1,0 +1,11 @@
+@* Test 2: Write to multiple files.
+@<*{test002.lua}@>=
+return {
+  @<Module exports@>
+}
+@<*{test002.c}@>=
+@<Global variables@>
+@<Module exports@>=
+fn = fn,
+@<Global variables@>=
+int i;

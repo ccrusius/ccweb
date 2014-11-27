@@ -37,12 +37,26 @@ local function diff(from,to)
     end
   until not froml or not tol
 
+  fromf:close()
+  tof:close()
+
   return hasdiffs
 end
 
 function test_test001()
   assert(docctangle("test001")==true)
   assert(diff("test001.outref","test001.out")==false)
+  os.remove("test001.out")
+end
+
+function test_test002()
+  assert(docctangle("test002")==true)
+  assert(diff("test002.outref","test002.out")==false)
+  assert(diff("test002.luaref","test002.lua")==false)
+  assert(diff("test002.cref","test002.c")==false)
+  os.remove("test002.out")
+  os.remove("test002.lua")
+  os.remove("test002.c")
 end
 
 lu = LuaUnit.new()

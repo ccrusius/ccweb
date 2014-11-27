@@ -65,20 +65,20 @@ local function unquoteline(line)
 end
 @ XXX careful to preserve indents and newlines
 @<Weaving chunks@>={lua}
-local function printchunk(title,prefix)
+local function printchunk(title,prefix,file)
   local chunk = chunks[title]
   assert(chunk,"Chunk '"..title.."' not found")
 
   local idx, pre, title, line, refindent
   local chunkindent = ""
   for idx,line in pairs(chunk) do
-    io.write(chunkindent)
+    file:write(chunkindent)
     refindent = prefix
     repeat
       pre,title,line = findchunkref(line)
       refindent = refindent .. string.gsub(pre,"."," ")
-      io.write(unquoteline(pre))
-      if title then printchunk(title,refindent) end
+      file:write(unquoteline(pre))
+      if title then printchunk(title,refindent,file) end
     until not line
     chunkindent = "\n"..prefix
   end
@@ -95,4 +95,16 @@ while line do
   else line = nextline() end
 end
 
-printchunk("*","")
+for title,chunk in pairs(chunks) do
+  if string.find(title,"^%*") then
+    if title == "*" then printchunk(title,"",io.output())
+    else
+      local file_name, status = string.gsub(title,"^%*{(.*)}","%1")
+      assert(status == 1,"Chunk '"..title.."' does not specify a file name.")
+      local file = io.open(file_name,"w+")
+      assert(file,"Could not open '"..file_name.."' for writing.")
+      printchunk(title,"",file)
+      file:close()
+    end
+  end
+end
