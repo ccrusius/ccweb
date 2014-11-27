@@ -1,1 +1,4 @@
 *.out
+*.swp
+bin/ccweave.lua
+bin/cctangle.lua

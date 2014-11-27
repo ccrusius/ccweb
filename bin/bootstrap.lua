@@ -1,58 +1,80 @@
-input = arg[1]
+local chunks = {}
+local chunkdef = "^@<%s*(.*)%s*@>=.*$"
+local function findchunkref(line)
+  local start, startend = string.find(line,"^@<")
+  if not start then
+    start, startend = string.find(line,"[^@]@<")
+    if not start then return line, nil, nil end
+    start = start + 1 -- The true start, past "[^@]"
+  end
 
+  local finish = string.find(line,"[^@]@>",start)
+  if not finish then return line, nil, nil end
+
+  local pre   = string.sub(line,1,start-1)
+  local title = string.sub(line,startend+1,finish)
+  local post  = string.sub(line,finish+3)
+  return pre, title, post
+end
+local function unquoteline(line)
+  return (string.gsub(line,"@\(.\)","%1"))
+end
+local STARTS_CHUNK = 1
+local STARTS_DOC   = 2
+local function startssec(line)
+  if string.find(line,"^@[ %*]") then return STARTS_DOC end
+  if string.find(line,chunkdef) then return STARTS_CHUNK end
+  return false
+end
+local function readchunk(line,nextline)
+  local title = string.gsub(line,chunkdef,"%1")
+  if not chunks[title] then chunks[title] = {} end
+  line = nextline()
+  while line and not startssec(line) do
+    table.insert(chunks[title],line)
+    line = nextline()
+  end
+  return line
+end
+local function printchunk(title,prefix,file)
+  local chunk = chunks[title]
+  assert(chunk,"Chunk '"..title.."' not found")
+
+  local idx, pre, title, line, refindent
+  local chunkindent = ""
+  for idx,line in pairs(chunk) do
+    file:write(chunkindent)
+    refindent = prefix
+    repeat
+      pre,title,line = findchunkref(line)
+      refindent = refindent .. string.gsub(pre,"."," ")
+      file:write(unquoteline(pre))
+      if title then printchunk(title,refindent,file) end
+    until not line
+    chunkindent = "\n"..prefix
+  end
+end
+input = arg[1]
 inputf, errmsg = io.open(input)
 assert(inputf, errmsg)
 
 nextline = inputf:lines()
-
-function startswith(str,start)
-  return (string.find(str,start,1,true) == 1)
-end
-
-chunks = {}
-
-function newchunk(l)
-  local title, n = string.gsub(l,"^@<(.*)@>=.*$","%1")
-  -- io.stderr:write("Chunk: "..title.."\n")
-
-  if not chunks[title] then chunks[title] = {} end
-
-  l = nextline()
-  while l and not string.find(l,"^@[ \*]") and not string.find(l,"^@<.*@>=") do
-    -- io.stderr:write("      "..l.."\n")
-    table.insert(chunks[title],l)
-    l = nextline()
-  end
-
-  return l
-end
-
 line = nextline()
 while line do
-  if string.find(line,"^@<.*@>=") then line = newchunk(line,nextline)
+  if startssec(line) == STARTS_CHUNK then line = readchunk(line,nextline)
   else line = nextline() end
 end
 
-function printchunk(title,indent)
-  local idx, line
-  local chunk = chunks[title]
-  assert(chunk,"Chunk '"..title.."' not found")
-  local thisindent = ""
-  for idx,line in pairs(chunk) do
-    -- io.stderr:write(">>> "..line.."\n")
-    if idx > 1 then io.write("\n") end
-    local start = string.find(line,"^@<",1)
-    if not start then start = string.find(line,"[^@]@<",1) end
-    local finish = string.find(line,"@>",start,true)
-    if start and finish then
-      io.write(thisindent..string.gsub(string.sub(line,1,start-1),"@@","@"))
-      printchunk(string.sub(line,start+2,finish-1),indent..string.rep(" ",start-1))
-      io.write(thisindent..string.gsub(string.sub(line,finish+2),"@@","@"))
+for title,chunk in pairs(chunks) do
+  if string.find(title,"^%*") then
+    if title == "*" then printchunk(title,"",io.output())
     else
-      io.write(thisindent..string.gsub(line,"@@","@"))
+      local file_name, status = string.gsub(title,"^%*{(.*)}","%1")
+      assert(status == 1,"Chunk '"..title.."' does not specify a file name.")
+      local file = io.open(file_name,"w+")
+      assert(file,"Could not open '"..file_name.."' for writing.")
+      printchunk(title,"",file)
+      file:close()
     end
-    thisindent = indent
   end
 end
-
-printchunk("*","")

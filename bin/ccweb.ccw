@@ -1,24 +1,52 @@
 @* Cesar Crusius' Literate Programming Toolkit.
-@<*@>=
-@<Global variables and utility functions@>
-@<Reading chunks@>
+I wrote these tools in order to have a better way of writing
+my \TeX{} macros, specifically those that involve a lot of
+Lua code. The |WEB| and |CWEB| tools were not language agnostic,
+and other tools either had no Windows binaries available, or
+did not generate plain \TeX{} documentation. Since writing simple
+literate programming weavers and tanglers is not too hard, I went
+ahead and wrote my own.
+
+@* The tangler.
+The tangler is the program that reads a |ccweb| file and writes
+the code specified in it.
+@<*{cctangle.lua}@>=
+@<Common |ccweb| code@>
 @<Weaving chunks@>
 @<Weave file@>
+
+@* The weaver.
+The weaver is the program that reads a |ccweb| file and writes
+the \TeX{} documentation.
+@<*{ccweave.lua}@>=
+@<Common |ccweb| code@>
+
+@* Commom code.
+There is a reasonable amount of common code between those tools,
+namely the code that reads a |ccweb| file into suitable data structures.
+@<Common |ccweb| code@>=
+@<Global variables@>
+@<Functions@>
+@<Reading chunks@>
+
 @ The chunks global variable is a table from the chunk title to the
-unprocessed list of lines in that chunk.  \vbox
-@<Global variables and utility functions@>={lua}
+unprocessed list of lines in that chunk.
+@<Global variables@>={lua}
 local chunks = {}
+
 @ Code chunks are started by any line matching the chunkdef pattern.
-@<Global variables and utility functions@>={lua}
+@<Global variables@>={lua}
 local chunkdef = "^@@<%s*(.*)%s*@@>=.*$"
+
 @<Reading chunks@>={lua}
 local STARTS_CHUNK = 1
 local STARTS_DOC   = 2
 local function startssec(line)
-  if string.find(line,"@@ ",1,true) then return STARTS_DOC end
+  if string.find(line,"^@@[ %*]") then return STARTS_DOC end
   if string.find(line,chunkdef) then return STARTS_CHUNK end
   return false
 end
+
 @ The readchunk function reads the chunk started by the line passed
 in as an argument, adds it to the respective entry in the chunks table, and
 returns the line following the chunk.
@@ -33,6 +61,7 @@ local function readchunk(line,nextline)
   end
   return line
 end
+
 @ Finding a chunk reference inside a chunk line is slightly complicated by the
 fact that we have to escape the |@| sign. A good example of something that
 would not work without this is weaving |ccweb.ccw| itself. The other issue we
@@ -42,7 +71,7 @@ where a bogus first character may be present.
 This function will return three values: the string preceding the chunk
 reference, the chunk title, and the rest of the string. Only the first will be
 non-|nil| when no chunks are referenced by the line.
-@<Global variables and utility functions@>={lua}
+@<Functions@>={lua}
 local function findchunkref(line)
   local start, startend = string.find(line,"^@@<")
   if not start then
@@ -59,10 +88,12 @@ local function findchunkref(line)
   local post  = string.sub(line,finish+3)
   return pre, title, post
 end
-@<Global variables and utility functions@>={lua}
+
+@<Functions@>={lua}
 local function unquoteline(line)
   return (string.gsub(line,"@@\(.\)","%1"))
 end
+
 @ XXX careful to preserve indents and newlines
 @<Weaving chunks@>={lua}
 local function printchunk(title,prefix,file)
@@ -83,6 +114,7 @@ local function printchunk(title,prefix,file)
     chunkindent = "\n"..prefix
   end
 end
+
 @<Weave file@>={lua}
 input = arg[1]
 inputf, errmsg = io.open(input)
