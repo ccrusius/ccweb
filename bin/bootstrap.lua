@@ -1,13 +1,4 @@
-local SEC_REGULAR = 1
-local SEC_STARRED = 2
-local SEC_NAMED   = 3
-local SEC_TYPES = {
-  [SEC_REGULAR] = "^@ ",
-  [SEC_STARRED] = "^@%*",
-  [SEC_NAMED]   = "^@<%s*(.*)%s*@>=.*$"
-}
 local sections = {}
-local curr_section_number
 local function unquoteline(line)
   return (string.gsub(line,"@\(.\)","%1"))
 end
@@ -29,37 +20,52 @@ local function process_named_reference(line)
   return pre, title, post
 end
 
-
-
-local function get_section_type(line)
-  for t,r in pairs(SEC_TYPES) do
-    if string.find(line,r) then return t end
+local function secdef_match(line)
+  if line then
+    local ms, me
+    for i,regexp in pairs({"^@[%s%*]%s*", "^@$"}) do
+      ms, me = string.find(line,regexp)
+      if ms then return ms, me end
+    end
   end
-  return nil
+end
+local function namedef_match(line)
+  if line then
+    local name, found = string.gsub(line,"^%s*@<%s*(.*)%s*@>=.*$","%1")
+    if found == 1 then return name end
+  end
 end
 local function read_section(line,get_next_line)
-  local section = {
-    ["type"] = get_section_type(line),
-    ["body"] = {},
-  }
+  local ms, me = secdef_match(line)
+  assert(ms,"Line '"..line.."' does not start a section.")
+  line = string.sub(line,me+1) -- Remove start section token
 
-  if section["type"] == SEC_NAMED then
-    section["name"] = string.gsub(line,SEC_TYPES[SEC_NAMED],"%1")
-  elseif section["type"] then
-    curr_section_number = curr_section_number + 1
-    section["number"] = curr_section_number
-  end
-  repeat
-    line = get_next_line()
-    if not line or get_section_type(line) then break end
+  local section = {
+                    ["star"] = false,
+                    ["body"] = {},
+                    ["name"] = nil,
+                    ["code"] = {},
+                  }
+  section["star"] = (line[2] == "*")
+
+  while line and not secdef_match(line) and not namedef_match(line) do
     table.insert(section["body"],line)
-  until false
+    line = get_next_line()
+  end
+  section["name"] = namedef_match(line)
+  if section["name"] then
+    while true do
+      line = get_next_line()
+      if not line or secdef_match(line) then break end
+      table.insert(section["code"],line)
+    end
+  end
 
   table.insert(sections,section)
   return line
 end
 local function read_ccweb_file(file_name)
-  curr_section_number = 0
+  io.stderr:write("(Reading CCWEB file '"..file_name.."')")
   local file, msg = io.open(file_name)
   assert(file,msg)
 
@@ -68,13 +74,12 @@ local function read_ccweb_file(file_name)
   while line do line = read_section(line, get_next_line) end
 end
 
-
 local function tangle_section(name,prefix,file)
-  local cur_prefix = ""
+  local cur_prefix = "" -- Do not write anything before first line
   for n,section in ipairs(sections) do
     if section["name"] == name then
       local ref_prefix, ref_name, pre
-      for n,line in ipairs(section["body"]) do
+      for n,line in ipairs(section["code"]) do
         file:write(cur_prefix)
         ref_prefix = prefix
         repeat
@@ -83,7 +88,7 @@ local function tangle_section(name,prefix,file)
           file:write(unquoteline(pre))
           if ref_name then tangle_section(ref_name,ref_prefix,file) end
         until not line
-        cur_prefix = "\n" .. prefix
+        cur_prefix = "\n" .. prefix -- Start indenting and writing line breaks.
       end
     end
   end
@@ -96,6 +101,7 @@ for n,section in ipairs(sections) do
   local name = section["name"]
   if name and not processed_main_sections[name] and string.find(name,"^%*") then
     processed_main_sections[name] = true
+    io.stderr:write("(Writing main section '"..name.."')")
     if name == "*" then tangle_section(name,"",io.output())
     else
       local file_name, status = string.gsub(name,"^%*{(.*)}","%1")

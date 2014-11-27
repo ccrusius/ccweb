@@ -3,9 +3,9 @@
 return {
   @<Module exports@>
 }
-@<*{test002.c}@>=
+@ @<*{test002.c}@>=
 @<Global variables@>
-@<Module exports@>=
+@ @<Module exports@>=
 fn = fn,
-@<Global variables@>=
+@ @<Global variables@>=
 int i;

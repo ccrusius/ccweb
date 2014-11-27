@@ -43,11 +43,13 @@ local function diff(from,to)
   return hasdiffs
 end
 
-function test_test001()
-  assert(docctangle("test001")==true)
-  assert(diff("test001.outref","test001.out")==false)
-  os.remove("test001.out")
+function do_out_test(base)
+  assert(docctangle(base)==true)
+  assert(diff(base..".outref",base..".out")==false)
+  os.remove(base..".out")
 end
+
+function test_test001() do_out_test("test001") end
 
 function test_test002()
   assert(docctangle("test002")==true)
@@ -58,6 +60,8 @@ function test_test002()
   os.remove("test002.lua")
   os.remove("test002.c")
 end
+
+function test_test003() do_out_test("test003") end
 
 lu = LuaUnit.new()
 os.exit(lu:runSuite())

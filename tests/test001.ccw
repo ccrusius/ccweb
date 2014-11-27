@@ -3,16 +3,16 @@
 subsection1
   subsection2
 subsection3
-@<*@>=
+@ @<*@>=
 statement1
   {@<section@>}
 statement2
-@<*@>=
+@ @<*@>=
 statement3
 statement4
 @<subsection@>
 {@<subsection@>}
-@<section@>=
+@ @<section@>=
 section1
 section2
   @<subsection@>

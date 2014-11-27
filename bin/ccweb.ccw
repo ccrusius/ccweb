@@ -5,7 +5,7 @@ Lua code. The |WEB| and |CWEB| tools were not language agnostic,
 and other tools either had no Windows binaries available, or
 did not generate plain \TeX{} documentation. Since writing simple
 literate programming weavers and tanglers is not too hard (at the
-time of this writing, the tangler was only 109~lines long), I went
+time of this writing, the tangler was only 115~lines long), I went
 ahead and wrote my own.
 
 @* Commom code.
@@ -16,7 +16,7 @@ common string processing utilities, and so on.
 @<Common |ccweb| code@>=
 @<Global variables@>
 @<Functions@>
-
+@ 
 @<Functions@>={lua}
 local function unquoteline(line)
   return (string.gsub(line,"@@\(.\)","%1"))
@@ -51,73 +51,85 @@ local function process_named_reference(line)
   return pre, title, post
 end
 
-
-
 @* Sections.
-There are three types of |CCWEB| sections, as far as the code is concerned:
-\item A {\it regular} section is one that starts with ``|@@ |''.
-\item A {\it starred} section is one that starts with ``|@@*|''.
-\item A {\it named} section is one that starts with ``|@@<|''.
-@<Global variables@>={lua}
-local SEC_REGULAR = 1
-local SEC_STARRED = 2
-local SEC_NAMED   = 3
-@<Global variables@>={lua}
-local SEC_TYPES = {
-  [SEC_REGULAR] = "^@@ ",
-  [SEC_STARRED] = "^@@%*",
-  [SEC_NAMED]   = "^@@<%s*(.*)%s*@@>=.*$"
+A |CCWEB| section is a chunk of documentation optionally attached to a named
+chunk of code. Sections that start with |@*| are ``starred.''
+@<Empty section@>=
+{
+  ["star"] = false,
+  ["body"] = {},
+  ["name"] = nil,
+  ["code"] = {},
 }
+@ Sections start with either ``|^@$|,'' ``|^@ |'', or ``|^@\*|'', but we can't
+match that with a regular expression because Lua does not allow for '|'
+operators in its patterns. We return the match start and end.
 @<Functions@>={lua}
-local function get_section_type(line)
-  for t,r in pairs(SEC_TYPES) do
-    if string.find(line,r) then return t end
+local function secdef_match(line)
+  if line then
+    local ms, me
+    for i,regexp in pairs({"^@@[%s%*]%s*", "^@@$"}) do
+      ms, me = string.find(line,regexp)
+      if ms then return ms, me end
+    end
   end
-  return nil
+end
+@ Since we built a function to match section starts, let us do the same for
+name definitons.
+@<Functions@>={lua}
+local function namedef_match(line)
+  if line then
+    local name, found = string.gsub(line,"^%s*@@<%s*(.*)%s*@@>=.*$","%1")
+    if found == 1 then return name end
+  end
 end
 @ The sections of a |ccweb| file are stored in the global |sections|
-array. This array will contain one table per section found in the file, in
-the order they were found.
+array, which behaves as a map from a section number to the
+section itself.
 @<Global variables@>={lua}
 local sections = {}
-@ We keep track of the current section number in the
-global variable |curr_section_number|.
-@<Global variables@>={lua}
-local curr_section_number
 @ 
 @<Functions@>={lua}
 local function read_section(line,get_next_line)
-  local section = {
-    ["type"] = get_section_type(line),
-    ["body"] = {},
-  }
+  local ms, me = secdef_match(line)
+  assert(ms,"Line '"..line.."' does not start a section.")
+  line = string.sub(line,me+1) -- Remove start section token
 
-  if section["type"] == SEC_NAMED then
-    section["name"] = string.gsub(line,SEC_TYPES[SEC_NAMED],"%1")
-  elseif section["type"] then
-    curr_section_number = curr_section_number + 1
-    section["number"] = curr_section_number
-  end
+  local section = @<Empty section@>
+  section["star"] = (line[2] == "*")
+
   @<Read section body@>
+  @<Read section code@>
 
   table.insert(sections,section)
   return line
 end
-@ This is exactly the type of loop described by Knuth in
-  "Literate Programming" p.47 as an example of places where
-  |goto| is justified.
+@ We keep adding lines to the section body until we find either the start
+of another section, or a code chunk to be attached to this section.
 @<Read section body@>={lua}
-repeat
-  line = get_next_line()
-  if not line or get_section_type(line) then break end
+while line and not secdef_match(line) and not namedef_match(line) do
   table.insert(section["body"],line)
-until false
+  line = get_next_line()
+end
+@ Reading the section code is very similar, but we need to skip the current
+line before adding anything. The resulting loop is exactly the type of loop
+described by Knuth in "Literate Programming" p.47 as an example of places where
+|goto| is justified -- in our case, |break| behaves exactly how |goto| should.
+@<Read section code@>={lua}
+section["name"] = namedef_match(line)
+if section["name"] then
+  while true do
+    line = get_next_line()
+    if not line or secdef_match(line) then break end
+    table.insert(section["code"],line)
+  end
+end
 @ Reading a |CCWEB| file is now a simple matter of initializing a few
 variables, opening the file for reading, and calling |read_section| until
 there is nothing left.
 @<Functions@>={lua}
 local function read_ccweb_file(file_name)
-  curr_section_number = 0
+  io.stderr:write("(Reading CCWEB file '"..file_name.."')")
   local file, msg = io.open(file_name)
   assert(file,msg)
 
@@ -144,14 +156,26 @@ print the part of the line leading to the reference, recursively call
 |tangle_section| to process the reference, and replace the input line with
 the trailing part of the string.
 
-Indentation, and new lines, are a bit harder to grasp: XXX
+Indentation, and line breaks, are a bit harder to come to terms to. For
+line breaks, imagine a line line |{ @@<Something@> }|, where |@<Something@>|
+expands to a single line. In this case, we do not want to write any
+line breaks when expanding |@<Something@>|, only the ones defined by
+|@<Something@>| itself. We achieve that by only write line breaks for lines
+that are neither the first, nor the last. Indentation follows the same logic,
+except that we do want to indent the last line -- as long as it is not also the
+first.
+
+The logic is complex to explain, but very easy to implement: we never write
+anything {\it after} an expanded line, only {\it before} it. For the first
+line, we write nothing before it, while for subsequent lines we write both
+a line break, and an indentation prefix.
 @<Tangle file@>={lua}
 local function tangle_section(name,prefix,file)
-  local cur_prefix = ""
+  local cur_prefix = "" -- Do not write anything before first line
   for n,section in ipairs(sections) do
     if section["name"] == name then
       local ref_prefix, ref_name, pre
-      for n,line in ipairs(section["body"]) do
+      for n,line in ipairs(section["code"]) do
         file:write(cur_prefix)
         ref_prefix = prefix
         repeat
@@ -160,11 +184,12 @@ local function tangle_section(name,prefix,file)
           file:write(unquoteline(pre))
           if ref_name then tangle_section(ref_name,ref_prefix,file) end
         until not line
-        cur_prefix = "\n" .. prefix
+        cur_prefix = "\n" .. prefix -- Start indenting and writing line breaks.
       end
     end
   end
 end
+@ 
 @<Main |CCTANGLE| procedure@>={lua}
 read_ccweb_file(arg[1])
 
@@ -174,6 +199,7 @@ for n,section in ipairs(sections) do
   local name = section["name"]
   if name and not processed_main_sections[name] and string.find(name,"^%*") then
     processed_main_sections[name] = true
+    io.stderr:write("(Writing main section '"..name.."')")
     if name == "*" then tangle_section(name,"",io.output())
     else
       local file_name, status = string.gsub(name,"^%*{(.*)}","%1")
