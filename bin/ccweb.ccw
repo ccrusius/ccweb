@@ -67,7 +67,7 @@ chunk of code. Sections that start with |@*| are ``starred.''
   ["name"] = nil,
   ["code"] = {},
 }
-@ Sections start with either ``|^@$|,'' ``|^@ |'', or ``|^@\*|'', but we can't
+@ Sections start with either ``|^@@$|'', ``|^@@ |'', or ``|^@@\*|'', but we can't
 match that with a regular expression because Lua does not allow for ``|@||''
 operators in its patterns. We return the match start and end.
 @<Functions@>={lua}
@@ -163,11 +163,10 @@ print the part of the line leading to the reference, recursively call
 the trailing part of the string.
 
 Indentation, and line breaks, are a bit harder to come to terms to. For
-line breaks, imagine a line line |{ @@<Something@> }|, where |@<Something@>|
+line breaks, imagine a line like $$|{ @@<Something@@> }|$$ where |@@<Something@@>|
 expands to a single line. In this case, we do not want to write any
-line breaks when expanding |@<Something@>|, only the ones defined by
-|@<Something@>| itself. We achieve that by only write line breaks for lines
-that are neither the first, nor the last. Indentation follows the same logic,
+line breaks at either the beginning or the end of |@@<Something@@>|'s expansion.
+Indentation follows the same logic,
 except that we do want to indent the last line -- as long as it is not also the
 first.
 
@@ -228,15 +227,28 @@ the \TeX{} documentation.
 @ The
 following table lists the macros from |cwebmac.tex| we will use to typeset
 our documentation.
-\halign{#\hfil&\quad#\hfil\cr
-\bf Macro & \bf What\cr\hline
-|\M#1|      & Begin regular section number |#1|\cr
-|\N#1#2#3.| & Begin starred section |#2|, with title |#3| and depth |#1|\cr
+\halign{\strut#\hfil&\quad#\hfil\cr
+\bf Macro & \bf What\cr
+|\M#1| & Begin regular section number |#1|.\cr
+|\N#1#2#3.| & Begin starred section |#2|, with title |#3| and depth |#1|.\cr
 }
+@ The
+following table lists the macros from |eplain.tex| we will use to typeset
+our documentation.
+\halign{\strut#\hfil&\quad#\hfil\cr
+\bf Macro & \bf What\cr
+|\verbatim #1@|endverbatim| & Typeset |#1| in verbatim mode..\cr
+}
+@ The PDF macros of |cwebmac| and |eplain| are incompatible, and the ones from
+|cwebmac| are buggy (at least according to
+|https://github.com/DynareTeam/dynare/blob/master/dynare++/kord/main.web|).
+I will keep the code below until I find a way to fix it.
 @<Write preamble@>={lua}
-file:write("\\let\\pdf+\n")
-file:write("\\input eplain\n")
 file:write("\\input cwebmac\n")
+file:write("\\let\\ifpdf\\relax\n")
+file:write("\\input eplain\n")
+-- file:write("\\newif\\ifpdf\n")
+-- file:write("\\iffalse\\fi\n")
 @ Unquote line for \TeX{} purposes.
 
 Returns the line split into two parts: the part that was unquoted, the part that
@@ -257,12 +269,7 @@ local function weave_unquote(line,stop)
       assert(string_at(remainder,1),"End of line '"..line.."' found while unquoting.")
       processed, remainder = shift_line(processed, remainder)
     elseif c == "|" then
-      remainder = string.sub(remainder,2)
-      assert(string_at(remainder,1,1),"End of line '"..line.."' found at verbatim start.")
-      local verb, noverb, status = weave_unquote(remainder,"|")
-      assert(status,"End of line '"..line.."' found before verbatim end.")
-      remainder = string.sub(noverb,2)
-      processed = processed.."\\verbatim "..verb.."|endverbatim"
+      @<Process verbatim chunk@>
     else
       processed, remainder = shift_line(processed, remainder)
     end
@@ -270,6 +277,16 @@ local function weave_unquote(line,stop)
 
   return processed, remainder, (string_at(remainder,1,1) == stop)
 end
+@ 
+@<Process verbatim chunk@>={lua}
+remainder = string.sub(remainder,2)
+assert(string_at(remainder,1,1),"End of line '"..line.."' found at verbatim start.")
+local verb, noverb, status = weave_unquote(remainder,"|")
+assert(status,"End of line '"..line.."' found before verbatim end.")
+
+verb = string.gsub(verb,"|","||")
+processed = processed.."\\hbox{\\verbatim "..verb.."|endverbatim}{}"
+remainder = string.sub(noverb,2)
 @ 
 @<Weave a single section@>={lua}
 local function weave_section(secno,section,file)
