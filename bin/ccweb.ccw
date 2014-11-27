@@ -260,7 +260,6 @@ local function weave_unquote(line,stop)
   local processed = ""
   local remainder = line
   while true do
-    -- io.stderr:write(">>>("..tostring(stop)..") '"..processed.."','"..remainder.."'\n")
     local c = string_at(remainder,1,1)
     if c == stop or not c then
       break
@@ -348,14 +347,24 @@ do
   file:write("\\X"..tostring(refsecno)..":\\box\\cctanglebox\\X")
 end
 
-@ @<Write |name|d section code@>={lua}
+@ For each line of code, we have to split it between code itself,
+and references to other sections. This is very similar to what we had to
+do when tangling code before.
+@<Write |name|d section code@>={lua}
 for i,line in ipairs(section["code"]) do
-  local codeline = string.gsub(line,"%|","||")
-  codeline = string.gsub(codeline,"@@(.)","%1")
-  codeline = string.gsub(codeline," ","| ")
-  file:write("\\verbatim\n"..codeline.."|endverbatim\\6\n")
+  local codeline, name
+  repeat
+    codeline,name,line = process_named_reference(line)
+    @<Weave verbatim code line@>
+    if name then @<Write |name|d section reference@> end
+  until not line
+  file:write("\\6\n")
 end
-
+@ @<Weave verbatim code line@>=
+codeline = string.gsub(codeline,"%|","||")
+codeline = string.gsub(codeline,"@@(.)","%1")
+codeline = string.gsub(codeline," ","| ")
+file:write("\\verbatim\n"..codeline.."|endverbatim")
 @ @<Main |CCWEAVE| procedure@>={lua}
 read_ccweb_file(arg[1])
 
