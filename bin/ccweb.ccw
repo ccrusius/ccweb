@@ -18,12 +18,18 @@ common string processing utilities, and so on.
 @<Functions@>
 @ 
 @<Functions@>={lua}
+local function string_at(str,idx)
+  if string.len(str) < idx then return nil end
+  return string.sub(str,idx,idx)
+end
+@ 
+@<Functions@>={lua}
 local function unquoteline(line)
   return (string.gsub(line,"@@\(.\)","%1"))
 end
 
 @ Finding a section reference inside a section line is slightly complicated by
-the fact that we have to escape the |@| sign. A good example of something that
+the fact that we have to escape the |@@| sign. A good example of something that
 would not work without this is weaving |ccweb.ccw| itself. The other issue we
 have to deal with is that the |start| pattern is either a ``true'' one, or one
 where a bogus first character may be present.
@@ -62,7 +68,7 @@ chunk of code. Sections that start with |@*| are ``starred.''
   ["code"] = {},
 }
 @ Sections start with either ``|^@$|,'' ``|^@ |'', or ``|^@\*|'', but we can't
-match that with a regular expression because Lua does not allow for '|'
+match that with a regular expression because Lua does not allow for ``|@||''
 operators in its patterns. We return the match start and end.
 @<Functions@>={lua}
 local function secdef_match(line)
@@ -93,10 +99,9 @@ local sections = {}
 local function read_section(line,get_next_line)
   local ms, me = secdef_match(line)
   assert(ms,"Line '"..line.."' does not start a section.")
-  line = string.sub(line,me+1) -- Remove start section token
 
   local section = @<Empty section@>
-  section["star"] = (line[2] == "*")
+  section["star"] = (string_at(line,2) == "*")
 
   @<Read section body@>
   @<Read section code@>
@@ -107,6 +112,7 @@ end
 @ We keep adding lines to the section body until we find either the start
 of another section, or a code chunk to be attached to this section.
 @<Read section body@>={lua}
+line = string.sub(line,me+1) -- Remove start section token
 while line and not secdef_match(line) and not namedef_match(line) do
   table.insert(section["body"],line)
   line = get_next_line()
@@ -216,4 +222,78 @@ The weaver is the program that reads a |ccweb| file and writes
 the \TeX{} documentation.
 @<*{ccweave.lua}@>=
 @<Common |ccweb| code@>
+@<|CCWEAVE| functions@>
+@<Weave a single section@>
+@<Main |CCWEAVE| procedure@>
+@ The
+following table lists the macros from |cwebmac.tex| we will use to typeset
+our documentation.
+\halign{#\hfil&\quad#\hfil\cr
+\bf Macro & \bf What\cr\hline
+|\M#1|      & Begin regular section number |#1|\cr
+|\N#1#2#3.| & Begin starred section |#2|, with title |#3| and depth |#1|\cr
+}
+@<Write preamble@>={lua}
+file:write("\\let\\pdf+\n")
+file:write("\\input eplain\n")
+file:write("\\input cwebmac\n")
+@ Unquote line for \TeX{} purposes.
+
+Returns the line split into two parts: the part that was unquoted, the part that
+remains to be quoted, and a third value indicating whethes |stop| was found or not.
+@<|CCWEAVE| functions@>={lua}
+local function shift_line(pre,post) return pre..string_at(post,1,1), string.sub(post,2) end
+@ @<|CCWEAVE| functions@>={lua}
+local function weave_unquote(line,stop)
+  local processed = ""
+  local remainder = line
+  while true do
+    -- io.stderr:write(">>>("..tostring(stop)..") '"..processed.."','"..remainder.."'\n")
+    local c = string_at(remainder,1,1)
+    if c == stop or not c then
+      break
+    elseif c == "@@" then
+      remainder = string.sub(remainder,2)
+      assert(string_at(remainder,1),"End of line '"..line.."' found while unquoting.")
+      processed, remainder = shift_line(processed, remainder)
+    elseif c == "|" then
+      remainder = string.sub(remainder,2)
+      assert(string_at(remainder,1,1),"End of line '"..line.."' found at verbatim start.")
+      local verb, noverb, status = weave_unquote(remainder,"|")
+      assert(status,"End of line '"..line.."' found before verbatim end.")
+      remainder = string.sub(noverb,2)
+      processed = processed.."\\verbatim "..verb.."|endverbatim"
+    else
+      processed, remainder = shift_line(processed, remainder)
+    end
+  end
+
+  return processed, remainder, (string_at(remainder,1,1) == stop)
+end
+@ 
+@<Weave a single section@>={lua}
+local function weave_section(secno,section,file)
+  @<Write section start@>
+  @<Write section body@>
+end
+@ @<Write section start@>={lua}
+if section["star"] then
+  file:write("\\N{1}{"..tostring(secno).."}")
+else
+  file:write("\\M{"..tostring(secno).."}")
+end
+@ @<Write section body@>={lua}
+for n,line in ipairs(section["body"]) do
+  local texline,remainder,status = weave_unquote(line,nil)
+  file:write(texline.."\n")
+end
+@ @<Main |CCWEAVE| procedure@>={lua}
+read_ccweb_file(arg[1])
+
+local file=io.output()
+@<Write preamble@>
+for n,section in ipairs(sections) do
+  weave_section(n,section,file)
+end
+file:write("\n\\bye")
 
