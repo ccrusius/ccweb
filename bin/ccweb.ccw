@@ -16,14 +16,12 @@ common string processing utilities, and so on.
 @<Common |ccweb| code@>=
 @<Global variables@>
 @<Functions@>
-@ 
-@<Functions@>={lua}
+@ @<Functions@>={lua}
 local function string_at(str,idx)
   if string.len(str) < idx then return nil end
   return string.sub(str,idx,idx)
 end
-@ 
-@<Functions@>={lua}
+@ @<Functions@>={lua}
 local function unquoteline(line)
   return (string.gsub(line,"@@\(.\)","%1"))
 end
@@ -94,8 +92,7 @@ array, which behaves as a map from a section number to the
 section itself.
 @<Global variables@>={lua}
 local sections = {}
-@ 
-@<Functions@>={lua}
+@ @<Functions@>={lua}
 local function read_section(line,get_next_line)
   local ms, me = secdef_match(line)
   assert(ms,"Line '"..line.."' does not start a section.")
@@ -194,8 +191,7 @@ local function tangle_section(name,prefix,file)
     end
   end
 end
-@ 
-@<Main |CCTANGLE| procedure@>={lua}
+@ @<Main |CCTANGLE| procedure@>={lua}
 read_ccweb_file(arg[1])
 
 local processed_main_sections = {}
@@ -253,8 +249,6 @@ I will keep the code below until I find a way to fix it.
 file:write("\\input cwebmac\n")
 file:write("\\let\\ifpdf\\relax\n")
 file:write("\\input eplain\n")
--- file:write("\\newif\\ifpdf\n")
--- file:write("\\iffalse\\fi\n")
 @ Unquote line for \TeX{} purposes.
 
 Returns the line split into two parts: the part that was unquoted, the part that
@@ -283,18 +277,16 @@ local function weave_unquote(line,stop)
 
   return processed, remainder, (string_at(remainder,1,1) == stop)
 end
-@ 
-@<Process verbatim chunk@>={lua}
+@ @<Process verbatim chunk@>={lua}
 remainder = string.sub(remainder,2)
 assert(string_at(remainder,1,1),"End of line '"..line.."' found at verbatim start.")
 local verb, noverb, status = weave_unquote(remainder,"|")
 assert(status,"End of line '"..line.."' found before verbatim end.")
 
 verb = string.gsub(verb,"|","||")
-processed = processed.."\\hbox{\\verbatim "..verb.."|endverbatim}{}"
+processed = processed.."\\hbox{\\verbatim\n"..verb.."|endverbatim}{}"
 remainder = string.sub(noverb,2)
-@ 
-@<Weave a single section@>={lua}
+@ @<Weave a single section@>={lua}
 local function weave_section(secno,section,file)
   @<Write section start@>
   @<Write section body@>
@@ -324,20 +316,46 @@ local function build_name_sec_map()
     end
   end
 end
-@ @<Write preamble@>={lua}
+@ When writing named chunks containing verbatim material, the easiest way
+to \TeX{} do the right thing is to first put the name in a box, and then
+use the box in the |\X| macro. The box we will use for that purpose is
+|\cctanglebox|.
+@<Write preamble@>={lua}
 file:write("\\newbox\\cctanglebox\n")
-@ @<Write section code@>={lua}
+@ The |\fi| at the end is necessary to balance out conditionals opened by
+the |cwebmac| macros issued at the named section header.
+@<Write section code@>={lua}
 if section["name"] then
   local name = section["name"]
+  @<Write |name|d section header@>
+  @<Write |name|d section code@>
+  file:write("\\fi\n")
+end
+@ @<Write |name|d section header@>={lua}
+if table.getn(section["body"]) > 0 then file:write("\\Y") end
+file:write("\\B\\4")
+@<Write |name|d section reference@>
+file:write("${}")
+if name_sec_map[name] ~= secno then file:write("\\mathrel+") end
+file:write("\\equiv{}$\\6\n")
+@ @<Write |name|d section reference@>={lua}
+do
   local refsecno = name_sec_map[name]
   assert(refsecno,"Section '"..name.."' does not seem to be defined anywhere.")
   local quoted, rest, status = weave_unquote(name)
   assert(status,"Cound not TeX-quote '"..name.."'.")
-  file:write("\\setbox\\cctanglebox\\hbox{"..quoted.."}\n")
-  file:write("\\Y\\B\\4\\X"..tostring(refsecno)..":\\box\\cctanglebox\\X${}")
-  if refsecno ~= secno then file:write("\\mathrel+") end
-  file:write("\\equiv{}$\\6\n")
+  file:write("\\setbox\\cctanglebox\\hbox{"..quoted.."}")
+  file:write("\\X"..tostring(refsecno)..":\\box\\cctanglebox\\X")
 end
+
+@ @<Write |name|d section code@>={lua}
+for i,line in ipairs(section["code"]) do
+  local codeline = string.gsub(line,"%|","||")
+  codeline = string.gsub(codeline,"@@(.)","%1")
+  codeline = string.gsub(codeline," ","| ")
+  file:write("\\verbatim\n"..codeline.."|endverbatim\\6\n")
+end
+
 @ @<Main |CCWEAVE| procedure@>={lua}
 read_ccweb_file(arg[1])
 
