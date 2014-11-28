@@ -8,6 +8,45 @@ literate programming weavers and tanglers is not too hard (at the
 time of this writing, both the tangler and the weaver were
 less than 200~lines each), I went
 ahead and wrote my own.
+@ The |CCWEB| syntax mostly a (small) subset to that of |CWEB|, but
+there are some differences that make it less complicated and
+more versatile:
+\unorderedlist\listcompact
+\li Sections start with either ``{\tt@@\SP}'' or ``|@@*|'', when
+    they appear at the beginning of a line. Just as
+    with |CWEB|, the latter starts a ``main section,'' which is
+    typeset with a bold title, on a new page.
+\li Section names are specified with \hbox{``|@@<|{\it section name}|@@>|,''}
+    and code parts start with \hbox{``|@@<|{\it section name}|@@>=|.''} (In
+    |CWEB| those start ``C parts,'' but |CCWEB| is language agnostic.)
+    Differently from |CWEB|, |CCWEB| allows any string to appear after a
+    \hbox{``|@@<|{\it section name}|@@>=|,''} and completely ignores it.
+    This allows one to signal other tools the language that follows,
+    or anything else one wishes. The
+    |ccweb.ccw| file, for example, marks Lua code with the string |{lua}|,
+    and my Vim setup then correctly syntax highlights those sections as
+    Lua code.
+\li Verbatim text is enclosed within ``|@||'', as long as both delimiters
+    occur on the same line.
+\li The quoting character is ``|@@|,'' that is, apart from the commands
+    above, |@@|\@|x writes the character \@|x to both the weaved and tangled
+    outputs. In |ccweb.ccw|, for example, the string ``|@@|\@|x'' is typed as
+    $|@|@@@@@|\@@@|x|$
+    (the |cwebmac| |\@|#1| macro typesets |#1| as an identifier),
+    and that in turn as
+    $|@|@@@|@@@@@@@@@@@|\@@@@@@@|x@||.$
+    The reader can figure it out for himself how is {\it that} typed.
+\endunorderedlist
+@ Gone is the |@@c| command that specifies the main section. Instead, |CCWEB|
+adopts a naming convention: when |cctangle| is run, the contents of the
+|@@<*@@>| section are written to |stdout|, while the contents of
+sections named \hbox{|@@<*{|{\it file name}|}@@>|} are written to the
+specified file name. The |ccweb.ccw| file uses this functionality to
+create both |ccweave.lua| and |cctangle.lua| with only one run of
+|cctangle|.
+@ |CCWEB| uses both the |cwebmac| and |eplain| macros. This so it can make
+use of Eplain's |verbatim| macros, having other Eplain macros available does
+not hurt too much.
 
 @* Commom code.
 There is a reasonable amount of common code shared between |CCWEAVE| and
