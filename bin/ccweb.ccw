@@ -100,10 +100,11 @@ A |CCWEB| section is a chunk of documentation optionally attached to a named
 chunk of code. Sections that start with |@*| are ``starred.''
 @<Empty section@>=
 {
-  ["star"] = false,
-  ["body"] = {},
-  ["name"] = nil,
-  ["code"] = {},
+  ["star"]  = false,
+  ["body"]  = {},
+  ["name"]  = nil,
+  ["code"]  = {},
+  ["depth"] = 0
 }
 @ Sections start with either ``|^@@$|'', ``|^@@ |'', or ``|^@@\*|'', but we can't
 match that with a regular expression because Lua does not allow for ``|@||''
@@ -112,7 +113,12 @@ operators in its patterns. We return the match start and end.
 local function secdef_match(line)
   if line then
     local ms, me
-    for i,regexp in pairs({"^@@[%s%*]%s*", "^@@$"}) do
+    for i,regexp in ipairs({
+             "^@@%*([0-9]+)%s*", -- Section with explicit depth.
+             "^@@%*%*?%s*", -- ...... Section with implicit depth.
+             "^@@%s%s*", -- ......... Regular section
+             "^@@$" -- .............. Regular section
+             }) do
       ms, me = string.find(line,regexp)
       if ms then return ms, me end
     end
@@ -139,12 +145,18 @@ local function read_section(line,get_next_line)
 
   local section = @<Empty section@>
   section["star"] = (string_at(line,2) == "*")
+  @<Determine section depth@>
 
   @<Read section body@>
   @<Read section code@>
 
   table.insert(sections,section)
   return line
+end
+@ @<Determine section depth@>={lua}
+if string_at(line,3) == "*" then section["depth"] = -1 end
+if string.find(line,"^@@%*([0-9]+)%s*") then
+  section["depth"]=tonumber(string.sub(line,3,me))
 end
 @ We keep adding lines to the section body until we find either the start
 of another section, or a code chunk to be attached to this section.
@@ -344,7 +356,7 @@ local function weave_section(secno,section,file)
 end
 @ @<Write section start@>={lua}
 if section["star"] then
-  file:write("\\N{1}{"..tostring(secno).."}")
+  file:write("\\N{"..tostring(section["depth"]).."}{"..tostring(secno).."}")
 else
   file:write("\\M{"..tostring(secno).."}")
 end
