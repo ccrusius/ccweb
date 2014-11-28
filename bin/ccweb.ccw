@@ -45,7 +45,7 @@ specified file name. The |ccweb.ccw| file uses this functionality to
 create both |ccweave.lua| and |cctangle.lua| with only one run of
 |cctangle|.
 @ |CCWEB| uses both the |cwebmac| and |eplain| macros. This so it can make
-use of Eplain's |verbatim| macros, having other Eplain macros available does
+use of Eplain's |verbatim| macros, but having other Eplain macros available does
 not hurt too much.
 
 @* Commom code.
