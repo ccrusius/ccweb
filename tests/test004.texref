@@ -1,0 +1,8 @@
+\input cwebmac
+\let\ifpdf\relax
+\input eplain
+\preamble\n
+"This should be copied verbatim"
+\newbox\cctanglebox
+
+\bye

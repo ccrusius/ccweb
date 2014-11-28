@@ -1,4 +1,7 @@
 *.out
 *.swp
+*.log
+*.toc
 bin/ccweave.lua
 bin/cctangle.lua
+bin/ccweb.tex

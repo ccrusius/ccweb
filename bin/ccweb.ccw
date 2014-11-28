@@ -5,7 +5,8 @@ Lua code. The |WEB| and |CWEB| tools were not language agnostic,
 and other tools either had no Windows binaries available, or
 did not generate plain \TeX{} documentation. Since writing simple
 literate programming weavers and tanglers is not too hard (at the
-time of this writing, the tangler was only 115~lines long), I went
+time of this writing, both the tangler and the weaver were
+less than 200~lines each), I went
 ahead and wrote my own.
 
 @* Commom code.
@@ -138,9 +139,19 @@ local function read_ccweb_file(file_name)
 
   get_next_line = file:lines()
   local line = get_next_line()
+  @<Read |CCWEB| file preamble@>
   while line do line = read_section(line, get_next_line) end
 end
-
+@ The preamble of a |CCWEB| file is all that comes before the first section
+definition. This material will be copied verbatim to the \TeX{} documentation
+file, at the beginning.
+@<Global variables@>=
+local preamble_section = @<Empty section@>
+@ @<Read |CCWEB| file preamble@>={lua}
+while line and not secdef_match(line) do
+  table.insert(preamble_section["body"],line)
+  line = get_next_line()
+end
 @* The tangler.
 The tangler is the program that reads a |ccweb| file and writes
 the code specified in it.
@@ -249,6 +260,7 @@ I will keep the code below until I find a way to fix it.
 file:write("\\input cwebmac\n")
 file:write("\\let\\ifpdf\\relax\n")
 file:write("\\input eplain\n")
+for i,line in ipairs(preamble_section["body"]) do file:write(line.."\n") end
 @ Unquote line for \TeX{} purposes.
 
 Returns the line split into two parts: the part that was unquoted, the part that
@@ -374,5 +386,6 @@ build_name_sec_map()
 for n,section in ipairs(sections) do
   weave_section(n,section,file)
 end
+
 file:write("\n\\bye")
 

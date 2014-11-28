@@ -11,6 +11,13 @@ local function docctangle(filename)
     return status
 end
 
+local function doccweave(filename)
+    print("ccweave "..filename)
+    local status = os.execute("lua ../bin/ccweave.lua "..filename..".ccw > "..filename..".tex")
+    if status == 0 then status = true end -- Windows
+    return status
+end
+
 local function diff(from,to)
   local fromf,tof,msg
 
@@ -43,13 +50,19 @@ local function diff(from,to)
   return hasdiffs
 end
 
-function do_out_test(base)
+function simple_tangle_test(base)
   assert(docctangle(base)==true)
   assert(diff(base..".outref",base..".out")==false)
   os.remove(base..".out")
 end
 
-function test_test001() do_out_test("test001") end
+function simple_weave_test(base)
+  assert(doccweave(base)==true)
+  assert(diff(base..".texref",base..".tex")==false)
+  os.remove(base..".tex")
+end
+
+function test_test001() simple_tangle_test("test001") end
 
 function test_test002()
   assert(docctangle("test002")==true)
@@ -61,7 +74,8 @@ function test_test002()
   os.remove("test002.c")
 end
 
-function test_test003() do_out_test("test003") end
+function test_test003() simple_tangle_test("test003") end
+function test_test004() simple_weave_test("test004") end
 
 lu = LuaUnit.new()
 os.exit(lu:runSuite())
