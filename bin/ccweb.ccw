@@ -348,11 +348,14 @@ assert(status,"End of line '"..line.."' found before verbatim end.")
 verb = string.gsub(verb,"|","||")
 processed = processed.."\\hbox{\\verbatim\n"..verb.."|endverbatim}{}"
 remainder = string.sub(noverb,2)
-@ @<Weave a single section@>={lua}
+@ The |\fi| at the end is necessary to balance out conditionals opened by
+the |cwebmac| macros issued at every section.
+@<Weave a single section@>={lua}
 local function weave_section(secno,section,file)
   @<Write section start@>
   @<Write section body@>
   @<Write section code@>
+  file:write("\\fi\n")
 end
 @ @<Write section start@>={lua}
 if section["star"] then
@@ -384,14 +387,11 @@ use the box in the |\X| macro. The box we will use for that purpose is
 |\cctanglebox|.
 @<Write preamble@>={lua}
 file:write("\\newbox\\cctanglebox\n")
-@ The |\fi| at the end is necessary to balance out conditionals opened by
-the |cwebmac| macros issued at the named section header.
-@<Write section code@>={lua}
+@ @<Write section code@>={lua}
 if section["name"] then
   local name = section["name"]
   @<Write |name|d section header@>
   @<Write |name|d section code@>
-  file:write("\\fi\n")
 end
 @ @<Write |name|d section header@>={lua}
 if table.getn(section["body"]) > 0 then file:write("\\Y") end
