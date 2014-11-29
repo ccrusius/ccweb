@@ -1,22 +1,21 @@
-@* Cesar Crusius' Literate Programming Toolkit.
+@** Cesar Crusius' Literate Programming Toolkit.
 I wrote these tools in order to have a better way of writing
 my \TeX{} macros, specifically those that involve a lot of
 Lua code. The |WEB| and |CWEB| tools were not language agnostic,
 and other tools either had no Windows binaries available, or
 did not generate plain \TeX{} documentation. Since writing simple
-literate programming weavers and tanglers is not too hard (at the
-time of this writing, both the tangler and the weaver were
-less than 200~lines each), I went
+literate programming weavers and tanglers is not too hard (the
+weaver and tangler were both pretty functional at last
+than 200~lines each), I went
 ahead and wrote my own.
 @ The |CCWEB| syntax mostly a (small) subset to that of |CWEB|, but
-there are some differences that make it less complicated and
+there are some differences that make it incompatible, less complicated, and
 more versatile:
-\unorderedlist\listcompact
-\li Sections start with either ``{\tt@@\SP}'' or ``|@@*|'', when
+\item{$\bullet$} Sections start with either ``{\tt@@\SP}'' or ``|@@*|'', when
     they appear at the beginning of a line. Just as
     with |CWEB|, the latter starts a ``main section,'' which is
     typeset with a bold title, on a new page.
-\li Section names are specified with \hbox{``|@@<|{\it section name}|@@>|,''}
+\item{$\bullet$} Section names are specified with \hbox{``|@@<|{\it section name}|@@>|,''}
     and code parts start with \hbox{``|@@<|{\it section name}|@@>=|.''} (In
     |CWEB| those start ``C parts,'' but |CCWEB| is language agnostic.)
     Differently from |CWEB|, |CCWEB| allows any string to appear after a
@@ -26,9 +25,9 @@ more versatile:
     |ccweb.ccw| file, for example, marks Lua code with the string |{lua}|,
     and my Vim setup then correctly syntax highlights those sections as
     Lua code.
-\li Verbatim text is enclosed within ``|@||'', as long as both delimiters
+\item{$\bullet$} Verbatim text is enclosed within ``|@||'', as long as both delimiters
     occur on the same line.
-\li The quoting character is ``|@@|,'' that is, apart from the commands
+\item{$\bullet$} The quoting character is ``|@@|,'' that is, apart from the commands
     above, |@@|\@|x writes the character \@|x to both the weaved and tangled
     outputs. In |ccweb.ccw|, for example, the string ``|@@|\@|x'' is typed as
     $|@|@@@@@|\@@@|x|$
@@ -36,7 +35,6 @@ more versatile:
     and that in turn as
     $|@|@@@|@@@@@@@@@@@|\@@@@@@@|x@||.$
     The reader can figure it out for himself how is {\it that} typed.
-\endunorderedlist
 @ Gone is the |@@c| command that specifies the main section. Instead, |CCWEB|
 adopts a naming convention: when |cctangle| is run, the contents of the
 |@@<*@@>| section are written to |stdout|, while the contents of
@@ -44,11 +42,9 @@ sections named \hbox{|@@<*{|{\it file name}|}@@>|} are written to the
 specified file name. The |ccweb.ccw| file uses this functionality to
 create both |ccweave.lua| and |cctangle.lua| with only one run of
 |cctangle|.
-@ |CCWEB| uses both the |cwebmac| and |eplain| macros. This so it can make
-use of Eplain's |verbatim| macros, but having other Eplain macros available does
-not hurt too much.
+@ |CCWEB| uses the |cwebmac| macros.
 
-@* Commom code.
+@** Commom code.
 There is a reasonable amount of common code shared between |CCWEAVE| and
 |CCTANGLE|,
 including the code that reads a |CCWEB| file into suitable data structures,
@@ -115,9 +111,9 @@ local function secdef_match(line)
     local ms, me
     for i,regexp in ipairs({
              "^@@%*([0-9]+)%s*", -- Section with explicit depth.
-             "^@@%*%*?%s*", -- ...... Section with implicit depth.
-             "^@@%s%s*", -- ......... Regular section
-             "^@@$" -- .............. Regular section
+             "^@@%*%*?%s*", -- .... Section with implicit depth.
+             "^@@%s%s*", -- ....... Regular section
+             "^@@$" -- ............ Regular section
              }) do
       ms, me = string.find(line,regexp)
       if ms then return ms, me end
@@ -203,7 +199,39 @@ while line and not secdef_match(line) do
   table.insert(preamble_section["body"],line)
   line = get_next_line()
 end
-@* The tangler.
+@* Verbatim print.
+When |CWEB| weaves a file, it goes to great lenghts to pretty-print C code.
+Since |CCWEB| is language agnostic, it does not even try -- it simply
+typesets all code in |\tt| font. In order to do that, it must replace all
+special characters by special sequences:
+@<Global variables@>={lua}
+tex_quotes = {
+  ["&"]  = "{\\AM}", -- Ampersand, from cwebmac
+  ["\\"] = "{\\BS}", -- Backslash, from cwebmac
+  ["{"]  = "{\\LB}", -- Left brace, from cwebmac
+  ["}"]  = "{\\RB}", -- Right brace, from cwebmac
+  [" "]  = "~",      -- Non-breakable space
+  ["~"]  = "{\\TL}", -- Tilde, from cwebmac
+  ["_"]  = "{\\UL}", -- Underline, from cwebmac
+  ["^"]  = "{\\CF}", -- Circumflex, from cwebmac
+  ["#"]  = "{\\#}",  -- Hash
+  ["$"]  = "{\\$}",  -- Dollar
+  ["%"]  = "{\\%}",  -- Percent
+}
+@ Quoting a string is simple enough. The |\hbox| with |\tentex| inside
+is a direct copy from |cwebmac|'s |\.| macro.
+@<Functions@>={lua}
+local function tex_quoted(line)
+  local result = ""
+  for c in line:gmatch(".") do
+    local repl = tex_quotes[c]
+    if repl then result = result .. repl
+    else result = result .. c
+    end
+  end
+  return "\\hbox{\\tentex "..result.."}"
+end
+@** The tangler.
 The tangler is the program that reads a |ccweb| file and writes
 the code specified in it.
 @<*{cctangle.lua}@>=
@@ -274,7 +302,7 @@ for n,section in ipairs(sections) do
     end
   end
 end
-@* The weaver.
+@** The weaver.
 The weaver is the program that reads a |ccweb| file and writes
 the \TeX{} documentation.
 @<*{ccweave.lua}@>=
@@ -296,21 +324,8 @@ our documentation.
 |\X#1:#2\X| & Begin name definition |#2|, for section |#1|.\cr
 |\Y|        & Begin a new paragraph before named code.\cr
 }
-@ The
-following table lists the macros from |eplain.tex| we will use to typeset
-our documentation.
-\halign{\strut#\hfil&\quad#\hfil\cr
-\bf Macro & \bf What\cr
-|\verbatim #1@|endverbatim| & Typeset |#1| in verbatim mode..\cr
-}
-@ The PDF macros of |cwebmac| and |eplain| are incompatible, and the ones from
-|cwebmac| are buggy (at least according to
-|https://github.com/DynareTeam/dynare/blob/master/dynare++/kord/main.web|).
-I will keep the code below until I find a way to fix it.
-@<Write preamble@>={lua}
+@ @<Write preamble@>={lua}
 file:write("\\input cwebmac\n")
-file:write("\\let\\ifpdf\\relax\n")
-file:write("\\input eplain\n")
 for i,line in ipairs(preamble_section["body"]) do file:write(line.."\n") end
 @ Unquote line for \TeX{} purposes.
 
@@ -345,8 +360,7 @@ assert(string_at(remainder,1,1),"End of line '"..line.."' found at verbatim star
 local verb, noverb, status = weave_unquote(remainder,"|")
 assert(status,"End of line '"..line.."' found before verbatim end.")
 
-verb = string.gsub(verb,"|","||")
-processed = processed.."\\hbox{\\verbatim\n"..verb.."|endverbatim}{}"
+processed = processed..tex_quoted(verb).."{}"
 remainder = string.sub(noverb,2)
 @ The |\fi| at the end is necessary to balance out conditionals opened by
 the |cwebmac| macros issued at every section.
@@ -424,10 +438,8 @@ for i,line in ipairs(section["code"]) do
   file:write("\\6\n")
 end
 @ @<Weave verbatim code line@>=
-codeline = string.gsub(codeline,"%|","||")
 codeline = string.gsub(codeline,"@@(.)","%1")
-codeline = string.gsub(codeline," ","| ")
-file:write("\\verbatim\n"..codeline.."|endverbatim")
+file:write(tex_quoted(codeline))
 @ @<Main |CCWEAVE| procedure@>={lua}
 read_ccweb_file(arg[1])
 

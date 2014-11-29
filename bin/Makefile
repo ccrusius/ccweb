@@ -7,4 +7,4 @@ ccweb.tex: ccweave.lua
 	lua ccweave.lua ccweb.ccw > $@
 
 ccweb.pdf: ccweb.tex
-	luatex ccweb
+	pdftex ccweb
