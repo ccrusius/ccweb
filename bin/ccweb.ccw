@@ -62,35 +62,6 @@ local function unquoteline(line)
   return (string.gsub(line,"@@\(.\)","%1"))
 end
 
-@ Finding a section reference inside a section line is slightly complicated by
-the fact that we have to escape the |@@| sign. A good example of something that
-would not work without this is weaving |ccweb.ccw| itself. The other issue we
-have to deal with is that the |start| pattern is either a ``true'' one, or one
-where a bogus first character may be present.
-
-This function will return input line, split into three:
-the string preceding the section
-reference, the name of the referenced section, and the rest of the string.
-Only the first will be
-non-|nil| when no sections are referenced in the line.
-@<Functions@>={lua}
-local function process_named_reference(line)
-  local start, startend = string.find(line,"^@@<")
-  if not start then
-    start, startend = string.find(line,"[^@@]@@<")
-    if not start then return line, nil, nil end
-    start = start + 1 -- The true start, past "[^@@]"
-  end
-
-  local finish = string.find(line,"[^@@]@@>",start)
-  if not finish then return line, nil, nil end
-
-  local pre   = string.sub(line,1,start-1)
-  local title = string.sub(line,startend+1,finish)
-  local post  = string.sub(line,finish+3)
-  return pre, title, post
-end
-
 @** Sections.
 A |CCWEB| section is a chunk of documentation optionally attached to a named
 chunk of code. Sections that start with |@*| are ``starred.''
@@ -106,7 +77,7 @@ chunk of code. Sections that start with |@*| are ``starred.''
 sequence of code text and references to other sections.
 @<Empty code text@>=
 { ["text"] = nil }
-@ @<Empty code reference@>=
+@ @<Empty section reference@>=
 { ["name"] = nil }
 @ The |get_section| function builds a basic section structure from a given line,
 and returns this structure and the part of the line that comes after the
@@ -190,9 +161,51 @@ if section["name"] then
   while true do
     line = get_next_line()
     if not line or get_section(line) then break end
-    table.insert(section["code"],line)
+    local codeline = {}
+    @<Process code line@>
+    table.insert(section["code"],codeline)
   end
 end
+@ When processing a code line, we need
+to split each code line into a sequence of verbatim text and section references.
+The loop proceeds by looking at whether the line starts with one or the other,
+then processes what it found, removes it from the line, and starts over again.
+@<Process code line@>={lua}
+while string.len(line) > 0 do
+  local ms, me
+  @<Compute start |ms| and end |me| positions of section reference@>
+  local node
+  if ms == 1 then
+    node = @<Empty section reference@>
+    node["name"] = string.sub(line,ms+2,me-1)
+    line = string.sub(line,me+2)
+  else
+    node = @<Empty code text@>
+    node["text"] = string.sub(line,1,ms-1)
+    line = string.sub(line,ms)
+  end
+  table.insert(codeline,node)
+end
+@ The tricky part here is that we can't use a pattern to match the line in
+its entirety, because that pattern would look to |CCWEB| line a section
+reference itself. The only way is to split the match in two parts.
+@<Compute start |ms| and end |me| positions of section reference@>={lua}
+  ms, me = string.find(line,"^@@<")
+  if not ms then
+    ms, me = string.find(line,"[^@@]@@<")
+    if ms then ms = ms + 1 end
+  end
+
+  if ms then
+    me = string.find(line,"[^@@]@@>",ms)
+    if me then me = me + 1 end
+  end
+
+  if not ms or not me then
+    ms = string.len(line)+1
+    me = ms
+  end
+
 @** Files.
 A |CCWEB| file consists of a {\it preamble\/}, which is all that comes before
 the first section definition, followed by a sequence of section definitions.
@@ -260,15 +273,8 @@ the code specified in it.
 @<Tangle file@>
 @<Main |CCTANGLE| procedure@>
 @ Tangling is done by the |tangle_section| function, which would be rather
-trivial if it weren't for named section references, and preservation of
+trivial if it weren't for and preservation of
 indentation.
-
-Named section references are handled recursively based on the results
-of |process_named_references|. That function is called to split the input
-line until no more references are found. Each time it is called, we
-print the part of the line leading to the reference, recursively call
-|tangle_section| to process the reference, and replace the input line with
-the trailing part of the string.
 
 Indentation, and line breaks, are a bit harder to come to terms to. For
 line breaks, imagine a line like $$|{ @@<Something@@> }|$$ where |@@<Something@@>|
@@ -291,12 +297,14 @@ local function tangle_section(name,prefix,file)
       for n,line in ipairs(section["code"]) do
         file:write(cur_prefix)
         ref_prefix = prefix
-        repeat
-          pre,ref_name,line = process_named_reference(line)
-          ref_prefix = ref_prefix .. string.gsub(pre,"."," ")
-          file:write(unquoteline(pre))
-          if ref_name then tangle_section(ref_name,ref_prefix,file) end
-        until not line
+        for n,node in ipairs(line) do
+          if node["text"] then
+            ref_prefix = ref_prefix .. string.gsub(node["text"],"."," ")
+            file:write(unquoteline(node["text"]))
+          else
+            tangle_section(node["name"],ref_prefix,file)
+          end
+        end
         cur_prefix = "\n" .. prefix -- Start indenting and writing line breaks.
       end
     end
@@ -445,6 +453,22 @@ file:write("\\B\\4")
 file:write("${}")
 if name_sec_map[name] ~= secno then file:write("\\mathrel+") end
 file:write("\\equiv{}$\n")
+@ For each line of code, we have to split it between code itself,
+and references to other sections. This is very similar to what we had to
+do when tangling code before.
+@<Write |name|d section code@>={lua}
+for i,line in ipairs(section["code"]) do
+  file:write("\\6")
+  for i,node in ipairs(line) do
+    if node["text"] then
+      file:write(tex_quoted(string.gsub(node["text"],"@@(.)","%1")))
+    else
+      local name = node["name"]
+      @<Write |name|d section reference@>
+    end
+  end
+  file:write("\n")
+end
 @ @<Write |name|d section reference@>={lua}
 do
   local refsecno = name_sec_map[name]
@@ -455,23 +479,6 @@ do
   file:write("\\X"..tostring(refsecno)..":\\box\\cctanglebox\\X")
 end
 
-@ For each line of code, we have to split it between code itself,
-and references to other sections. This is very similar to what we had to
-do when tangling code before.
-@<Write |name|d section code@>={lua}
-for i,line in ipairs(section["code"]) do
-  local codeline, name
-  file:write("\\6")
-  repeat
-    codeline,name,line = process_named_reference(line)
-    @<Weave verbatim code line@>
-    if name then @<Write |name|d section reference@> end
-  until not line
-  file:write("\n")
-end
-@ @<Weave verbatim code line@>=
-codeline = string.gsub(codeline,"@@(.)","%1")
-file:write(tex_quoted(codeline))
 @ @<Main |CCWEAVE| procedure@>={lua}
 read_file(arg[1])
 
