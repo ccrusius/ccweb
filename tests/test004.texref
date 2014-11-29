@@ -3,4 +3,6 @@
 "This should be copied verbatim"
 \newbox\cctanglebox
 
-\bye
+\inx
+\fin
+\con

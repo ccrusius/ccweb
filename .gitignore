@@ -2,6 +2,8 @@
 *.swp
 *.log
 *.toc
+*.idx
+*.scn
 bin/ccweave.lua
 bin/cctangle.lua
 bin/ccweb.tex

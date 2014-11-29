@@ -13,7 +13,7 @@ end
 
 local function doccweave(filename)
     print("ccweave "..filename)
-    local status = os.execute("lua ../bin/ccweave.lua "..filename..".ccw > "..filename..".tex")
+    local status = os.execute("lua ../bin/ccweave.lua "..filename..".ccw")
     if status == 0 then status = true end -- Windows
     return status
 end

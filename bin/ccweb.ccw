@@ -44,7 +44,7 @@ create both |ccweave.lua| and |cctangle.lua| with only one run of
 |cctangle|.
 @ |CCWEB| uses the |cwebmac| macros.
 
-@** Commom code.
+@** Common code.
 There is a reasonable amount of common code shared between |CCWEAVE| and
 |CCTANGLE|,
 including the code that reads a |CCWEB| file into suitable data structures,
@@ -100,78 +100,86 @@ chunk of code. Sections that start with |@*| are ``starred.''
   ["body"]  = {},
   ["name"]  = nil,
   ["code"]  = {},
-  ["depth"] = 0
+  ["depth"] = 1
 }
-@ Sections start with either ``|^@@$|'', ``|^@@ |'', or ``|^@@\*|'', but we can't
-match that with a regular expression because Lua does not allow for ``|@||''
-operators in its patterns. We return the match start and end.
+@ The |get_section| function builds a basic section structure from a given line,
+and returns this structure and the part of the line that comes after the
+section command. It the line does not start a section, the function returns |nil|.
 @<Functions@>={lua}
-local function secdef_match(line)
-  if line then
-    local ms, me
-    for i,regexp in ipairs({
-             "^@@%*([0-9]+)%s*", -- Section with explicit depth.
-             "^@@%*%*?%s*", -- .... Section with implicit depth.
-             "^@@%s%s*", -- ....... Regular section
-             "^@@$" -- ............ Regular section
-             }) do
-      ms, me = string.find(line,regexp)
-      if ms then return ms, me end
-    end
-  end
+local function get_section(line)
+  local section = @<Empty section@>
+  local match
+  @<Process |@@*|\@|n section start@>
+  @<Process |@@*| section start@>
+  @<Process {\tt@@\SP} section start@>
 end
-@ Since we built a function to match section starts, let us do the same for
+@ For determining the section depth, |CWEB|'s documentation seems to imply that
+``|@@**|'' sections have depth~$-1$, but a quick test run reveals otherwise:
+``|@@**|'' sections have depth~$0$, ``|@@*|'' sections have
+depth~$1$, and \hbox{``|@@*|\@|n''} sections have depth~$n+1$.
+@<Process |@@*|\@|n section start@>={lua}
+local match2
+match, match2 = string.match(line,"^@@%*([0-9]+)%s*([^%s].*)$") if match then
+  section["star"] = true
+  section["depth"] = tonumber(match)+1
+  return section, match2
+end
+@ @<Process |@@*| section start@>={lua}
+match = string.match(line,"^@@%*%*?%s*([^%s].*)$") if match then
+  section["star"] = true
+  if string_at(line,3) == "*" then section["depth"] = 0 end
+  return section, match
+end
+@ @<Process {\tt@@\SP} section start@>={lua}
+match = string.match(line,"^@@%s%s*([^%s].*)$") if match then
+  return section, match
+end
+if string.find(line,"^@@%s*$") then return section, nil end
+@ The |get_section_name| function is the section name equivalent
+to |get_section|: if the given line specifies a section name, it
+returns it.
 name definitons.
 @<Functions@>={lua}
-local function namedef_match(line)
+local function get_section_name(line)
   if line then
     local name, found = string.gsub(line,"^%s*@@<%s*(.*)%s*@@>=.*$","%1")
     if found == 1 then return name end
   end
 end
-@ The sections of a |ccweb| file are stored in the global |sections|
+@ We are now ready to read the sections of a |CCWEB| file. The sections
+will be stored in the global |sections|
 array, which behaves as a map from a section number to the
 section itself.
 @<Global variables@>={lua}
 local sections = {}
 @ @<Functions@>={lua}
 local function read_section(line,get_next_line)
-  local ms, me = secdef_match(line)
-  assert(ms,"Line '"..line.."' does not start a section.")
-
-  local section = @<Empty section@>
-  section["star"] = (string_at(line,2) == "*")
-  @<Determine section depth@>
-
+  local section, rest = get_section(line)
+  assert(section,"Line '"..line.."' does not start a section.")
+  if not rest then line = get_next_line()
+  else line = rest end
   @<Read section body@>
   @<Read section code@>
-
   table.insert(sections,section)
   return line
-end
-@ @<Determine section depth@>={lua}
-if string_at(line,3) == "*" then section["depth"] = -1 end
-if string.find(line,"^@@%*([0-9]+)%s*") then
-  section["depth"]=tonumber(string.sub(line,3,me))
 end
 @ We keep adding lines to the section body until we find either the start
 of another section, or a code chunk to be attached to this section.
 @<Read section body@>={lua}
-line = string.sub(line,me+1) -- Remove start section token
-while line and not secdef_match(line) and not namedef_match(line) do
+while line and not get_section(line) and not get_section_name(line) do
   table.insert(section["body"],line)
   line = get_next_line()
 end
 @ Reading the section code is very similar, but we need to skip the current
 line before adding anything. The resulting loop is exactly the type of loop
 described by Knuth in "Literate Programming" p.47 as an example of places where
-|goto| is justified -- in our case, |break| behaves exactly how |goto| should.
+|oto| is justified -- in our case, |break| behaves exactly how |goto| should.
 @<Read section code@>={lua}
-section["name"] = namedef_match(line)
+section["name"] = get_section_name(line)
 if section["name"] then
   while true do
     line = get_next_line()
-    if not line or secdef_match(line) then break end
+    if not line or get_section(line) then break end
     table.insert(section["code"],line)
   end
 end
@@ -179,7 +187,7 @@ end
 variables, opening the file for reading, and calling |read_section| until
 there is nothing left.
 @<Functions@>={lua}
-local function read_ccweb_file(file_name)
+local function read_file(file_name)
   io.stderr:write("(Reading CCWEB file '"..file_name.."')")
   local file, msg = io.open(file_name)
   assert(file,msg)
@@ -195,7 +203,7 @@ file, at the beginning.
 @<Global variables@>=
 local preamble_section = @<Empty section@>
 @ @<Read |CCWEB| file preamble@>={lua}
-while line and not secdef_match(line) do
+while line and not get_section(line) do
   table.insert(preamble_section["body"],line)
   line = get_next_line()
 end
@@ -282,7 +290,7 @@ local function tangle_section(name,prefix,file)
   end
 end
 @ @<Main |CCTANGLE| procedure@>={lua}
-read_ccweb_file(arg[1])
+read_file(arg[1])
 
 local processed_main_sections = {}
 
@@ -303,7 +311,7 @@ for n,section in ipairs(sections) do
   end
 end
 @** The weaver.
-The weaver is the program that reads a |ccweb| file and writes
+The weaver is the program that reads a |ccweb| file and writes out
 the \TeX{} documentation.
 @<*{ccweave.lua}@>=
 @<Common |ccweb| code@>
@@ -311,9 +319,16 @@ the \TeX{} documentation.
 @<|CCWEAVE| functions@>
 @<Weave a single section@>
 @<Main |CCWEAVE| procedure@>
+@ We initialize the job name with a quick and dirty |basename| replacement.
+The wiles written will be \hbox{\\{jobname}|.tex|},
+\hbox{\\{jobname}|.idx|} (the index), and \hbox{\\{jobname}|.scn|} (for
+the section names).
+@<|CCWEAVE| global variables@>={lua}
+local jobname = string.gsub(string.gsub(arg[1],".*[/\]",""),"%.[^.]*$","")
 @ The
-following table lists the macros from |cwebmac.tex| we will use to typeset
-our documentation.
+following table lists some of the macros from |cwebmac.tex| we will use to typeset
+our documentation. Any macros not mentioned here will be documented as they appear
+in the code.
 \halign{\strut#\hfil&\quad#\hfil\cr
 \bf Macro & \bf What\cr
 |\4|        & Backspace one notch.\cr
@@ -325,10 +340,12 @@ our documentation.
 |\Y|        & Begin a new paragraph before named code.\cr
 }
 @ @<Write preamble@>={lua}
-file:write("\\input cwebmac\n")
+file:write([[@<\TeX{} preamble@>]])
+file:write("\n")
 for i,line in ipairs(preamble_section["body"]) do file:write(line.."\n") end
+@ @<\TeX{} preamble@>={tex}
+\input cwebmac
 @ Unquote line for \TeX{} purposes.
-
 Returns the line split into two parts: the part that was unquoted, the part that
 remains to be quoted, and a third value indicating whethes |stop| was found or not.
 @<|CCWEAVE| functions@>={lua}
@@ -441,14 +458,26 @@ end
 codeline = string.gsub(codeline,"@@(.)","%1")
 file:write(tex_quoted(codeline))
 @ @<Main |CCWEAVE| procedure@>={lua}
-read_ccweb_file(arg[1])
+read_file(arg[1])
 
-local file=io.output()
+local file=io.open(jobname .. ".tex","w+")
+assert(file,"Could not open '"..jobname..".tex' for writing.")
 @<Write preamble@>
 build_name_sec_map()
+@<Write index file@>
+@<Write section file@>
 for n,section in ipairs(sections) do
   weave_section(n,section,file)
 end
 
-file:write("\n\\bye")
+file:write("\n\\inx\n\\fin\n\\con\n")
+file:close()
+@ @<Write index file@>={lua}
+local index_file=io.open(jobname..".idx","w+")
+assert(index_file,"Could not open '"..jobname..".idx' for writing.")
+index_file:close()
+@ @<Write section file@>={lua}
+local section_file=io.open(jobname..".scn","w+")
+assert(section_file,"Could not open '"..jobname..".scn' for writing.")
+section_file:close()
 
