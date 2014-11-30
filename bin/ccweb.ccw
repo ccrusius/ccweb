@@ -23,8 +23,9 @@ more versatile:
     This allows one to signal other tools the language that follows,
     or anything else one wishes. The
     |ccweb.ccw| file, for example, marks Lua code with the string |{lua}|,
+    \TeX{} code with the string |{tex}|,
     and my Vim setup then correctly syntax highlights those sections as
-    Lua code.
+    Lua and \TeX{} code.
 \item{$\bullet$} Verbatim text is enclosed within ``|@||'', as long as both delimiters
     occur on the same line.
 \item{$\bullet$} The quoting character is ``|@@|,'' that is, apart from the commands
@@ -62,7 +63,6 @@ common string processing utilities, and so on.
 @<Common |ccweb| code@>
 @<|CCWEAVE| global variables@>
 @<|CCWEAVE| functions@>
-@<Weave a single section@>
 @<Main |CCWEAVE| procedure@>
 @* Utility functions.
 These are in two categories: string manipulation
@@ -170,7 +170,7 @@ $$\vbox{\halign{#\hfil\cr
 |  " end"|\cr
 |}|\cr
 }}$$
-@* Parsing.
+@* Basic parsing.
 The building block of line parsing is the |parse_chunk| function: it processes
 characters from the given line, one by one, keeping quotes intact,
 until |EOL| or any expression in the |stop| list is found at the beginning of what
@@ -194,7 +194,8 @@ local function parse_chunk(line,stop)
   return result, rest
 end
 @* Reading section text.
-Let us now build these structures from lines of input. The
+Let us now start buildin the section structures from
+lines of input. The
 function |parse_text_line| builds a structure from the given
 line until what remains to be parsed starts with |stop|.
 
@@ -311,14 +312,12 @@ end
 if string.find(line,"^@@%s*$") then return section, nil end
 @ The |get_section_name| function is the section name equivalent
 to |get_section|: if the given line specifies a section name, it
-returns it.
-
-This function needs to be rewritten in terms of |parse_chunk|.
+returns it. Otherwise, it returns |nil|.
 @<Parsing functions@>={lua}
 local function get_section_name(line)
-  if line then
-    local name, found = string.gsub(line,"^%s*@@<%s*(.*)%s*@@>=.*$","%1")
-    if found == 1 then return name end
+  if line and starts_with(line,"@@<") then
+    local parse, rest = parse_text_line(string.sub(line,3),"@@>=")
+    if starts_with(rest,"@@>=") then return parse["line"] end
   end
 end
 @* Parsing whole sections.
@@ -438,7 +437,10 @@ end
 @<Tangle code node@>={lua}
 ref_prefix = ref_prefix .. string.gsub(node,"."," ")
 file:write(unquoteline(node))
-@ @<Main |CCTANGLE| procedure@>={lua}
+@ The main routine simply loops through all sections, tangling
+those that start with ``|*|''. The only thing to be careful about
+is to tangle each section only once.
+@<Main |CCTANGLE| procedure@>={lua}
 read_file(arg[1])
 
 local processed_main_sections = {}
@@ -461,19 +463,38 @@ for n,section in ipairs(sections) do
 end
 @** The weaver.
 The weaver is the program that reads a |ccweb| file and writes out
-the \TeX{} documentation.
-@ We initialize the job name with a quick and dirty |basename| replacement.
-The files written will be \hbox{\\{jobname}|.tex|},
-\hbox{\\{jobname}|.idx|} (the index), and \hbox{\\{jobname}|.scn|} (for
-the section names).
-@<|CCWEAVE| global variables@>={lua}
-local jobname = string.gsub(string.gsub(arg[1],".*[/\]",""),"%.[^.]*$","")
-@ @<\TeX{} preamble@>={tex}
+the \TeX{} documentation. This documentation will use |cwebmac| in
+a way very similar to |CWEB|.
+
+The
+following table lists some of the macros from |cwebmac.tex| we will use to typeset
+our documentation. Any macros not mentioned here will be documented as they appear
+in the code.
+$$\vbox{\halign{\strut#\hfil&\quad#\hfil\cr
+\bf Macro & \bf What\cr
+|\4|        & Backspace one notch.\cr
+|\6|        & End of named section start.\cr
+|\B|        & Go into ``C mode.''\cr
+|\M#1| & Begin regular section number |#1|.\cr
+|\N#1#2#3.| & Begin starred section |#2|, with title |#3| and depth |#1|.\cr
+|\X#1:#2\X| & Begin name definition |#2|, for section |#1|.\cr
+|\Y|        & Begin a new paragraph before named code.\cr
+}}$$
+The \TeX{} preamble and postamble start
+exactly the same way as in a |CWEB|-produced file:
+@<\TeX{} preamble@>={tex}
 \input cwebmac
 @ @<\TeX{} postamble@>={tex}
 \inx
 \fin
 \con
+@ The files we will write depend on the ``job name,'' which we initialize
+with a quick and dirty |basename| replacement.
+The files written will be \hbox{\\{jobname}|.tex|},
+\hbox{\\{jobname}|.idx|} (the index), and \hbox{\\{jobname}|.scn|} (for
+the section names).
+@<|CCWEAVE| global variables@>={lua}
+local jobname = string.gsub(string.gsub(arg[1],".*[/\]",""),"%.[^.]*$","")
 @* Verbatim print.
 When |CWEB| weaves a file, it goes to great lenghts to pretty-print C code.
 Since |CCWEB| is language agnostic, it does not even try -- it simply
@@ -506,60 +527,8 @@ local function tex_quoted(line)
   end
   return "\\hbox{\\tentex "..result.."}"
 end
-@* XXX.
-@ The
-following table lists some of the macros from |cwebmac.tex| we will use to typeset
-our documentation. Any macros not mentioned here will be documented as they appear
-in the code.
-\halign{\strut#\hfil&\quad#\hfil\cr
-\bf Macro & \bf What\cr
-|\4|        & Backspace one notch.\cr
-|\6|        & End of named section start.\cr
-|\B|        & Go into ``C mode.''\cr
-|\M#1| & Begin regular section number |#1|.\cr
-|\N#1#2#3.| & Begin starred section |#2|, with title |#3| and depth |#1|.\cr
-|\X#1:#2\X| & Begin name definition |#2|, for section |#1|.\cr
-|\Y|        & Begin a new paragraph before named code.\cr
-}
-@ @<Write preamble@>={lua}
-file:write([[@<\TeX{} preamble@>]])
-file:write("\n")
-for i,line in ipairs(preamble) do file:write(line.."\n") end
-@ Write a text blob.
-This function receives a text structure, with |["line"]| and |["nodes"]| elements,
-and writes it out in \TeX-friendly format to the given file.
-@<|CCWEAVE| functions@>={lua}
-local function write_text(text,file)
-  local line = text["line"]
-  for n, node in ipairs(text["nodes"]) do
-    if node then
-      local str = unquoteline(string.sub(line,node[1],node[2]))
-      if n%2 == 0 then str = tex_quoted(str) end
-      file:write(str)
-    end
-  end
-end
-@ The |\fi| at the end is necessary to balance out conditionals opened by
-the |cwebmac| macros issued at every section.
-@<Weave a single section@>={lua}
-local function weave_section(secno,section,file)
-  @<Write section start@>
-  @<Write section body@>
-  @<Write section code@>
-  file:write("\\fi\n")
-end
-@ @<Write section start@>={lua}
-if section["star"] then
-  file:write("\\N{"..tostring(section["depth"]).."}{"..tostring(secno).."}")
-else
-  file:write("\\M{"..tostring(secno).."}")
-end
-@ @<Write section body@>={lua}
-for n,line in ipairs(section["body"]) do
-  write_text(line,file)
-  file:write("\n")
-end
-@ Before writing named sections we need to build a map from their
+@* Cross-referencing.
+Before writing named sections we need to build a map from their
 names into which section they were first defined.
 @<|CCWEAVE| global variables@>={lua}
 local name_sec_map = {}
@@ -572,54 +541,91 @@ local function build_name_sec_map()
     end
   end
 end
-@ When writing named chunks containing verbatim material, the easiest way
-to \TeX{} do the right thing is to first put the name in a box, and then
-use the box in the |\X| macro. The box we will use for that purpose is
-|\cctanglebox|.
-@<\TeX{} preamble@>={tex}
-\newbox\cctanglebox
-@ @<Write section code@>={lua}
-if section["name"] then
-  local name = section["name"]
-  @<Write |name|d section header@>
-  @<Write |name|d section code@>
-  file:write("\\par")
-end
-@ @<Write |name|d section header@>={lua}
-if table.getn(section["body"]) > 0 then file:write("\\Y") end
-file:write("\\B\\4")
-@<Write |name|d section reference@>
-file:write("${}")
-if name_sec_map[name] ~= secno then file:write("\\mathrel+") end
-file:write("\\equiv{}$\n")
-@ For each line of code, we have to split it between code itself,
-and references to other sections. This is very similar to what we had to
-do when tangling code before.
-@<Write |name|d section code@>={lua}
-for n,line in ipairs(section["code"]) do
-  file:write("\\6")
-  for n, node in ipairs(line) do
+@* Writing sections.
+We start by writing a tex-formatted chunk of documentation.
+Given a section structure node with |"line"| and |"nodes"| elements,
+the |write_text_line| function will write it out to the give file.
+@<|CCWEAVE| functions@>={lua}
+local function write_text_line(text,file)
+  local line = text["line"]
+  for n, node in ipairs(text["nodes"]) do
     if node then
-      if n%2 == 1 then file:write(tex_quoted(unquoteline(node)))
-      else
-        local name = node["line"]
-        @<Write |name|d section reference@>
-      end
+      local str = unquoteline(string.sub(line,node[1],node[2]))
+      if n%2 == 0 then str = tex_quoted(str) end -- even n: verbatim text
+      file:write(str)
     end
   end
-  file:write("\n")
 end
-@ @<Write |name|d section reference@>={lua}
-do
+@ To write a section reference, we must look it up in the
+cross-reference table to find its number. We use a quick and
+dirty $|write_text_line|\circ|parse_text_line|$ call to properly
+parse and format the section name.
+@<\TeX{} preamble@>={tex}
+\newbox\cctanglebox
+@ @<|CCWEAVE| functions@>={lua}
+local function write_section_reference(name,file)
   local refsecno = name_sec_map[name]
-  assert(refsecno,"Section '"..name.."' does not seem to be defined anywhere.")
+  assert(refsecno,"Section @@<"..name.."@@> does not seem to be defined anywhere.")
   file:write("\\setbox\\cctanglebox\\hbox{")
-  write_text((parse_text_line(name,"$")),file)
+  write_text_line((parse_text_line(name,"$")),file)
   file:write("}")
   file:write("\\X"..tostring(refsecno)..":\\box\\cctanglebox\\X")
 end
+@ The counterpart to |write_text_line| is |write_code_line|. Given a list
+with an alternating sequence of code text and section references,
+it writes it out to the given file.
+@<|CCWEAVE| functions@>={lua}
+local function write_code_line(code, file)
+  for n, node in ipairs(code) do if node then
+    if n%2 == 1 then file:write(tex_quoted(unquoteline(node)))
+    else write_section_reference(node["line"],file)
+    end
+  end end
+end
+@ We are now ready to write the weaved version of an entire section.
+The |\fi| at the end is necessary to balance out conditionals opened by
+the |cwebmac| macros issued at every section.
+@<|CCWEAVE| functions@>={lua}
+local function write_section(secno,section,file)
+  @<Write section start@>
+  @<Write section body@>
+  @<Write section code@>
+  file:write("\\fi\n")
+end
+@ Starred sections get their own table of contents entry, and are specified
+with a different macro.
+@<Write section start@>={lua}
+if section["star"] then
+  file:write("\\N{"..tostring(section["depth"]).."}{"..tostring(secno).."}")
+else
+  file:write("\\M{"..tostring(secno).."}")
+end
+@ @<Write section body@>={lua}
+for n,line in ipairs(section["body"]) do
+  write_text_line(line,file)
+  file:write("\n")
+end
+@ @<Write section code@>={lua}
+if section["name"] then
+  local name = section["name"]
 
-@ @<Main |CCWEAVE| procedure@>={lua}
+  if table.getn(section["body"]) > 0 then file:write("\\Y") end
+  file:write("\\B\\4")
+  write_section_reference(name,file)
+  file:write("${}")
+  if name_sec_map[name] ~= secno then file:write("\\mathrel+") end
+  file:write("\\equiv{}$\n")
+
+  for n,line in ipairs(section["code"]) do
+    file:write("\\6")
+    write_code_line(line,file)
+    file:write("\n")
+  end
+
+  file:write("\\par")
+end
+@* The main procedure.
+@<Main |CCWEAVE| procedure@>={lua}
 read_file(arg[1])
 
 local file=io.open(jobname .. ".tex","w+")
@@ -629,11 +635,15 @@ build_name_sec_map()
 @<Write index file@>
 @<Write section file@>
 for n,section in ipairs(sections) do
-  weave_section(n,section,file)
+  write_section(n,section,file)
 end
 
 file:write([[@<\TeX{} postamble@>]])
 file:close()
+@ @<Write preamble@>={lua}
+file:write([[@<\TeX{} preamble@>]])
+file:write("\n")
+for i,line in ipairs(preamble) do file:write(line.."\n") end
 @ @<Write index file@>={lua}
 local index_file=io.open(jobname..".idx","w+")
 assert(index_file,"Could not open '"..jobname..".idx' for writing.")
