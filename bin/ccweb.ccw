@@ -64,14 +64,21 @@ common string processing utilities, and so on.
 @<|CCWEAVE| functions@>
 @<Weave a single section@>
 @<Main |CCWEAVE| procedure@>
-@** Utility Functions.
-@ @<Functions@>={lua}
+@* Utility functions.
+These are in two categories: string manipulation
+and debugging.
+@ Lua lacks a basic |str[i]| construction to get a character from a
+string. We fix the problem with a |string_at| function.
+@<Functions@>={lua}
 local function string_at(str,idx)
   if not str or not idx then return nil end
   if string.len(str) < idx then return nil end
   return string.sub(str,idx,idx)
 end
-@ @<Functions@>={lua}
+@ We also have the need to check whether a string starts with a certain
+expression or not. The |starts_with| function does that, accepting both
+a string and a list of strings.
+@<Functions@>={lua}
 local function starts_with(line,expr)
   if not line then return false end
   if type(expr) == "string" then
@@ -85,9 +92,27 @@ local function starts_with(line,expr)
   end
   return false
 end
-@ @<Functions@>={lua}
+@ When printing both code and \TeX{} documentation, we have to process the |@@|
+quotes, and we do it all at one go by calling the |unquoteline| function.
+@<Functions@>={lua}
 local function unquoteline(line)
   return (string.gsub(line,"@@\(.\)","%1"))
+end
+@ Finally, once I started fancyfying this code, I started running into many problems.
+Since Lua does not have support for C-style |#line| directives, I chose to
+insert debug output manually into the code, until I found the problem.
+
+Apart from |io.stderr:write|, there is a need to print data structures,
+which are Lua tables. The function below takes care of that.
+@<Functions@>={lua}
+local function print_table(tree,file,prefix)
+  file:write("{\n")
+  for k,v in pairs(tree) do
+    file:write(prefix.."  ["..tostring(k).."] = ")
+    if type(v) == "table" then print_table(v,file,prefix.."    ")
+    else file:write(tostring(v).."\n") end
+  end
+  file:write(prefix.."}\n")
 end
 
 @** Sections.
@@ -145,24 +170,7 @@ $$\vbox{\halign{#\hfil\cr
 |  " end"|\cr
 |}|\cr
 }}$$
-@*1 Debugging.
-Once I started fancyfying this code, I started running into many problems.
-Since Lua does not have support for C-style |#line| directives, I chose to
-insert debug output manually into the code, until I found the problem.
-
-Apart from |io.stderr:write|, there is a need to print data structures,
-which are Lua tables. The function below takes care of that.
-@<Functions@>={lua}
-local function print_table(tree,file,prefix)
-  file:write("{\n")
-  for k,v in pairs(tree) do
-    file:write(prefix.."  ["..tostring(k).."] = ")
-    if type(v) == "table" then print_table(v,file,prefix.."    ")
-    else file:write(tostring(v).."\n") end
-  end
-  file:write(prefix.."}\n")
-end
-@*1 Parsing.
+@* Parsing.
 The building block of line parsing is the |parse_chunk| function: it processes
 characters from the given line, one by one, keeping quotes intact,
 until |EOL| or any expression in the |stop| list is found at the beginning of what
@@ -185,7 +193,7 @@ local function parse_chunk(line,stop)
   end
   return result, rest
 end
-@*1 Reading section text.
+@* Reading section text.
 Let us now build these structures from lines of input. The
 function |parse_text_line| builds a structure from the given
 line until what remains to be parsed starts with |stop|.
@@ -237,7 +245,7 @@ else table.insert(result["nodes"],false) end
 result["line"]=result["line"].."|"
 
 rest=string.sub(rest,2)
-@*1 Reading section code.
+@* Reading section code.
 With the |parse_text_line| function out of the way, building an equivalent
 |parse_code_line|
 function is relatively easy, as it follows basically the same motions, this
@@ -267,8 +275,8 @@ local function parse_code_line(line)
   end
   return result
 end
-@* XXX.
-@ The |get_section| function builds a basic section structure from a given line,
+@* Parsing section definitions.
+The |get_section| function builds a basic section structure from a given line,
 and returns this structure and the part of the line that comes after the
 section command. It the line does not start a section, the function returns |nil|.
 @<Parsing functions@>={lua}
@@ -313,7 +321,8 @@ local function get_section_name(line)
     if found == 1 then return name end
   end
 end
-@ We are now ready to read the sections of a |CCWEB| file. The sections
+@* Parsing whole sections.
+We are now ready to read the sections of a |CCWEB| file. The sections
 will be stored in the global |sections|
 array, which behaves as a map from a section number to the
 section itself.
@@ -356,7 +365,7 @@ if section["name"] then
     table.insert(section["code"],codeline)
   end
 end
-@** Files.
+@* Parsing entire files.
 A |CCWEB| file consists of a {\it preamble\/}, which is all that comes before
 the first section definition, followed by a sequence of section definitions.
 The preamble will be copied verbatim to the \TeX{} documentation file, at the
@@ -387,10 +396,10 @@ end
 The tangler is the program that reads a |ccweb| file and writes
 the code specified in it.
 Tangling is done by the |tangle_section| function, which would be rather
-trivial if it weren't for and preservation of
+trivial if it weren't for line breaks and preservation of
 indentation.
 
-Indentation, and line breaks, are a bit harder to come to terms to. For
+For
 line breaks, imagine a line like $$|{ @@<Something@@> }|$$ where |@@<Something@@>|
 expands to a single line. In this case, we do not want to write any
 line breaks at either the beginning or the end of |@@<Something@@>|'s expansion.
@@ -409,17 +418,19 @@ local function tangle_section(name,prefix,file)
     if section["name"] == name then
       local ref_prefix, ref_name, pre
       for n,line in ipairs(section["code"]) do
-        file:write(cur_prefix)
-        ref_prefix = prefix
-        for n,node in ipairs(line) do
-          if node then
-            if n%2 == 0 then tangle_section(node["line"],ref_prefix,file)
-            else @<Tangle code node@>
-            end
-          end
-        end
+        @<Tangle code line@>
         cur_prefix = "\n" .. prefix -- Start indenting and writing line breaks.
       end
+    end
+  end
+end
+@ @<Tangle code line@>={lua}
+file:write(cur_prefix)
+ref_prefix = prefix
+for n,node in ipairs(line) do
+  if node then
+    if n%2 == 0 then tangle_section(node["line"],ref_prefix,file)
+    else @<Tangle code node@>
     end
   end
 end
@@ -451,6 +462,18 @@ end
 @** The weaver.
 The weaver is the program that reads a |ccweb| file and writes out
 the \TeX{} documentation.
+@ We initialize the job name with a quick and dirty |basename| replacement.
+The files written will be \hbox{\\{jobname}|.tex|},
+\hbox{\\{jobname}|.idx|} (the index), and \hbox{\\{jobname}|.scn|} (for
+the section names).
+@<|CCWEAVE| global variables@>={lua}
+local jobname = string.gsub(string.gsub(arg[1],".*[/\]",""),"%.[^.]*$","")
+@ @<\TeX{} preamble@>={tex}
+\input cwebmac
+@ @<\TeX{} postamble@>={tex}
+\inx
+\fin
+\con
 @* Verbatim print.
 When |CWEB| weaves a file, it goes to great lenghts to pretty-print C code.
 Since |CCWEB| is language agnostic, it does not even try -- it simply
@@ -484,12 +507,6 @@ local function tex_quoted(line)
   return "\\hbox{\\tentex "..result.."}"
 end
 @* XXX.
-@ We initialize the job name with a quick and dirty |basename| replacement.
-The wiles written will be \hbox{\\{jobname}|.tex|},
-\hbox{\\{jobname}|.idx|} (the index), and \hbox{\\{jobname}|.scn|} (for
-the section names).
-@<|CCWEAVE| global variables@>={lua}
-local jobname = string.gsub(string.gsub(arg[1],".*[/\]",""),"%.[^.]*$","")
 @ The
 following table lists some of the macros from |cwebmac.tex| we will use to typeset
 our documentation. Any macros not mentioned here will be documented as they appear
@@ -508,8 +525,6 @@ in the code.
 file:write([[@<\TeX{} preamble@>]])
 file:write("\n")
 for i,line in ipairs(preamble) do file:write(line.."\n") end
-@ @<\TeX{} preamble@>={tex}
-\input cwebmac
 @ Write a text blob.
 This function receives a text structure, with |["line"]| and |["nodes"]| elements,
 and writes it out in \TeX-friendly format to the given file.
@@ -561,8 +576,8 @@ end
 to \TeX{} do the right thing is to first put the name in a box, and then
 use the box in the |\X| macro. The box we will use for that purpose is
 |\cctanglebox|.
-@<Write preamble@>={lua}
-file:write("\\newbox\\cctanglebox\n")
+@<\TeX{} preamble@>={tex}
+\newbox\cctanglebox
 @ @<Write section code@>={lua}
 if section["name"] then
   local name = section["name"]
@@ -617,7 +632,7 @@ for n,section in ipairs(sections) do
   weave_section(n,section,file)
 end
 
-file:write("\n\\inx\n\\fin\n\\con\n")
+file:write([[@<\TeX{} postamble@>]])
 file:close()
 @ @<Write index file@>={lua}
 local index_file=io.open(jobname..".idx","w+")

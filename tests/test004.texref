@@ -1,8 +1,7 @@
 \input cwebmac
+             \newbox\cctanglebox
 \preamble\n
 "This should be copied verbatim"
-\newbox\cctanglebox
-
 \inx
-\fin
-\con
+             \fin
+             \con
