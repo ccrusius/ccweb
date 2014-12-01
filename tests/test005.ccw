@@ -1,0 +1,5 @@
+@ Test for underscores in file section names.
+@<*{test_005.c}@>=
+@<Succeed@>
+@ @<Succeed@>=
+const char* s = "nothing succeeds like success";

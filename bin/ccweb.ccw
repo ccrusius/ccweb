@@ -562,12 +562,18 @@ dirty $|write_text_line|\circ|parse_text_line|$ call to properly
 parse and format the section name.
 @<\TeX{} preamble@>={tex}
 \newbox\cctanglebox
-@ @<|CCWEAVE| functions@>={lua}
+@ There is one other thing we must take care of: |@@<*...@@>| sections
+must be printed verbatim.
+@<|CCWEAVE| functions@>={lua}
 local function write_section_reference(name,file)
   local refsecno = name_sec_map[name]
   assert(refsecno,"Section @@<"..name.."@@> does not seem to be defined anywhere.")
   file:write("\\setbox\\cctanglebox\\hbox{")
-  write_text_line((parse_text_line(name,"$")),file)
+  if string_at(name,1) == "*" then
+    file:write(tex_quoted(unquoteline(name)))
+  else
+    write_text_line((parse_text_line(name,"$")),file)
+  end
   file:write("}")
   file:write("\\X"..tostring(refsecno)..":\\box\\cctanglebox\\X")
 end

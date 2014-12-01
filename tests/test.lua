@@ -4,18 +4,20 @@ local function startswith(str,start)
   return (string.find(str,start,1,true) == 1)
 end
 
+local function docmd(cmd)
+  local status = os.execute(cmd)
+  if status == 0 then status = true end -- Windows
+  return status
+end
+
 local function docctangle(filename)
     print("cctangle "..filename)
-    local status = os.execute("lua ../bin/cctangle.lua "..filename..".ccw > "..filename..".out")
-    if status == 0 then status = true end -- Windows
-    return status
+    return docmd("lua ../bin/cctangle.lua "..filename..".ccw > "..filename..".out")
 end
 
 local function doccweave(filename)
     print("ccweave "..filename)
-    local status = os.execute("lua ../bin/ccweave.lua "..filename..".ccw")
-    if status == 0 then status = true end -- Windows
-    return status
+    return docmd("lua ../bin/ccweave.lua "..filename..".ccw")
 end
 
 local function diff(from,to)
@@ -76,6 +78,12 @@ end
 
 function test_test003() simple_tangle_test("test003") end
 function test_test004() simple_weave_test("test004") end
+
+function test_test005()
+  local name="test005"
+  assert(doccweave(name)==true)
+  assert(docmd("pdftex -interaction=batchmode "..name)==true)
+end
 
 lu = LuaUnit.new()
 os.exit(lu:runSuite())
