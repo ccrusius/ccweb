@@ -561,14 +561,21 @@ for n,section in ipairs(sections) do
     cross_ref_map[name] = record
   end
 end
-@ @<Fill in |"usedin"| data member@>={lua}
+@ Here we need to make sure we only insert a section once,
+since one can repeat the reference many times in a single
+section. Lua does not give us a simple way to do this, but
+in our case all we need is to check the last value.
+@<Fill in |"usedin"| data member@>={lua}
 for n,section in ipairs(sections) do
   for o,codeline in ipairs(section["code"]) do
     for p,node in ipairs(codeline) do if node and p%2 == 0 then
       local name = node["line"]
       assert(cross_ref_map[name],
              "Section @@<"..name.."@@> does not seem to be defined anywhere.")
-      table.insert(cross_ref_map[name]["usedin"],n)
+      local usedin = cross_ref_map[name]["usedin"]
+      if usedin[#usedin] ~= n then
+        table.insert(usedin,n)
+      end
     end end
   end
 end
