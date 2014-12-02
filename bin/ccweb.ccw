@@ -579,6 +579,26 @@ for n,section in ipairs(sections) do
     end end
   end
 end
+@ We are going to define the function that writes cross-references
+here.
+There's a lot of nitty-gritty logic in here to write just the right
+macro, but the logic is simple enough.
+@<|CCWEAVE| functions@>={lua}
+local function write_cross_reference(prefix,sections,file)
+  local n = #sections
+  if n == 0 then return end
+  file:write(prefix)
+  if n > 1  then file:write("s") end
+  for k,v in ipairs(sections) do
+    if k > 1 then
+      if k == n then file:write([[\ET]]) end
+      if k == n and n > 2 then file:write("s") end
+      if k ~= n then file:write(",") end
+    end
+    file:write(tostring(v))
+  end
+  file:write(".")
+end
 @* Writing sections.
 We start by writing a tex-formatted chunk of documentation.
 Given a section structure node with |"line"| and |"nodes"| elements,
@@ -601,20 +621,25 @@ parse and format the section name.
 @<\TeX{} preamble@>={tex}
 \newbox\cctanglebox
 @ There is one other thing we must take care of: |@@<*...@@>| sections
-must be printed verbatim.
+must be printed verbatim. If the |all_numbers| parameter is true, then
+write all the section numbers defining this section -- this is useful
+when writing the sections file later on.
 @<|CCWEAVE| functions@>={lua}
-local function write_section_reference(name,file)
+local function write_section_reference(name,file,all_numbers)
   local record = cross_ref_map[name]
   assert(record,"Section @@<"..name.."@@> does not seem to be defined anywhere.")
-  local refsecno = record["secno"]
   file:write("\\setbox\\cctanglebox\\hbox{")
   if string_at(name,1) == "*" then
     file:write(tex_quoted(unquoteline(name)))
   else
     write_text_line((parse_text_line(name,"$")),file)
   end
-  file:write("}")
-  file:write("\\X"..tostring(refsecno)..":\\box\\cctanglebox\\X")
+  file:write([[}\X]])
+  file:write(tostring(record["secno"]))
+  if all_numbers then for k,v in ipairs(record["more"]) do
+    file:write(","..tostring(v))
+  end end
+  file:write(":\\box\\cctanglebox\\X")
 end
 @ The counterpart to |write_text_line| is |write_code_line|. Given a list
 with an alternating sequence of code text and section references,
@@ -672,25 +697,9 @@ if section["name"] then
   @<Write cross-reference information@>
 end
 @ @<Write cross-reference information@>={lua}
-local write_cross_reference = function(prefix,sections)
-  local n = #sections
-  if n == 0 then return end
-  file:write(prefix)
-  if n > 1  then file:write("s") end
-  for k,v in ipairs(sections) do
-    if k > 1 then
-      if k == n then file:write([[\ET]]) end
-      if k == n and n > 2 then file:write("s") end
-      if k ~= n then file:write(",") end
-    end
-    file:write(tostring(v))
-  end
-  file:write(".")
-end
-@ @<Write cross-reference information@>={lua}
 if record["secno"] == secno then
-  write_cross_reference([[\A]],record["more"])
-  write_cross_reference([[\U]],record["usedin"])
+  write_cross_reference([[\A]],record["more"],file)
+  write_cross_reference([[\U]],record["usedin"],file)
 end
 @* The main procedure.
 @<Main |CCWEAVE| procedure@>={lua}
@@ -716,8 +725,26 @@ for i,line in ipairs(preamble) do file:write(line.."\n") end
 local index_file=io.open(jobname..".idx","w+")
 assert(index_file,"Could not open '"..jobname..".idx' for writing.")
 index_file:close()
-@ @<Write section file@>={lua}
+@ The section file has all sections, in alphabetical order. When
+ordering them, we try, but not too hard.
+@<Write section file@>={lua}
 local section_file=io.open(jobname..".scn","w+")
 assert(section_file,"Could not open '"..jobname..".scn' for writing.")
+local sorted_names = {}
+for n,section in ipairs(sections) do table.insert(sorted_names,section["name"]) end
+table.sort(sorted_names,function (n1,n2)
+    return n1:gsub("[^A-Za-z%*]",""):lower() < n2:gsub("[^A-Za-z%*]",""):lower()
+  end)
+local last_name
+for n,name in ipairs(sorted_names) do
+  if name ~= last_name then
+    local record = cross_ref_map[name]
+    section_file:write([[\I]])
+    write_section_reference(name,section_file,true)
+    write_cross_reference([[\U]],record["usedin"],section_file)
+    section_file:write("\n")
+    last_name = name
+  end
+end
 section_file:close()
 

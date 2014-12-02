@@ -82,7 +82,9 @@ function test_test004() simple_weave_test("test004") end
 function test_test005()
   local name="test005"
   assert(doccweave(name)==true)
-  assert(docmd("pdftex -interaction=batchmode "..name)==true)
+  assert(docmd("pdftex -interaction=nonstopmode "..name)==true)
+  os.remove(name..".pdf")
+  os.remove(name..".tex")
 end
 
 lu = LuaUnit.new()
