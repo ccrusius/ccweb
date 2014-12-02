@@ -528,17 +528,48 @@ local function tex_quoted(line)
   return "\\hbox{\\tentex "..result.."}"
 end
 @* Cross-referencing.
-Before writing named sections we need to build a map from their
+Before writing named sections we build a map from their
 names into which section they were first defined.
-@<|CCWEAVE| global variables@>={lua}
-local name_sec_map = {}
-@ @<|CCWEAVE| functions@>={lua}
-local function build_name_sec_map()
-  for n,section in ipairs(sections) do
-    local name = section["name"]
-    if name and not name_sec_map[name] then
-      name_sec_map[name] = n
+@<Empty section cross-reference data@>={lua}
+{
+  ["secno"]  = -1, -- What is the section number?
+  ["more"]   = {}, -- Other sections adding code to this.
+  ["usedin"] = {}  -- Sections whose code refer to this.
+}
+@ @<|CCWEAVE| global variables@>={lua}
+local cross_ref_map = {}
+@ We build the map in two passes: the first one fills
+the |"secno"| and |"more"| parts, and the second one
+fills in the |"usedin"| list
+will contain section names.
+@<|CCWEAVE| functions@>={lua}
+local function build_cross_ref_map()
+  @<Fill in |"secno"| and |"more"| data members@>
+  @<Fill in |"usedin"| data member@>
+end
+@ @<Fill in |"secno"| and |"more"| data members@>={lua}
+for n,section in ipairs(sections) do
+  local name = section["name"]
+  if name then
+    local record = cross_ref_map[name]
+    if not record then
+      record = @<Empty section cross-reference data@>
+      record["secno"] = n
+    else
+      table.insert(record["more"],n)
     end
+    cross_ref_map[name] = record
+  end
+end
+@ @<Fill in |"usedin"| data member@>={lua}
+for n,section in ipairs(sections) do
+  for o,codeline in ipairs(section["code"]) do
+    for p,node in ipairs(codeline) do if node and p%2 == 0 then
+      local name = node["line"]
+      assert(cross_ref_map[name],
+             "Section @@<"..name.."@@> does not seem to be defined anywhere.")
+      table.insert(cross_ref_map[name]["usedin"],n)
+    end end
   end
 end
 @* Writing sections.
@@ -566,8 +597,9 @@ parse and format the section name.
 must be printed verbatim.
 @<|CCWEAVE| functions@>={lua}
 local function write_section_reference(name,file)
-  local refsecno = name_sec_map[name]
-  assert(refsecno,"Section @@<"..name.."@@> does not seem to be defined anywhere.")
+  local record = cross_ref_map[name]
+  assert(record,"Section @@<"..name.."@@> does not seem to be defined anywhere.")
+  local refsecno = record["secno"]
   file:write("\\setbox\\cctanglebox\\hbox{")
   if string_at(name,1) == "*" then
     file:write(tex_quoted(unquoteline(name)))
@@ -614,12 +646,13 @@ end
 @ @<Write section code@>={lua}
 if section["name"] then
   local name = section["name"]
+  local record = cross_ref_map[name]
 
   if table.getn(section["body"]) > 0 then file:write("\\Y") end
   file:write("\\B\\4")
   write_section_reference(name,file)
   file:write("${}")
-  if name_sec_map[name] ~= secno then file:write("\\mathrel+") end
+  if record["secno"] ~= secno then file:write("\\mathrel+") end
   file:write("\\equiv{}$\n")
 
   for n,line in ipairs(section["code"]) do
@@ -629,6 +662,28 @@ if section["name"] then
   end
 
   file:write("\\par")
+  @<Write cross-reference information@>
+end
+@ @<Write cross-reference information@>={lua}
+local write_cross_reference = function(prefix,sections)
+  local n = #sections
+  if n == 0 then return end
+  file:write(prefix)
+  if n > 1  then file:write("s") end
+  for k,v in ipairs(sections) do
+    if k > 1 then
+      if k == n then file:write([[\ET]]) end
+      if k == n and n > 2 then file:write("s") end
+      if k ~= n then file:write(",") end
+    end
+    file:write(tostring(v))
+  end
+  file:write(".")
+end
+@ @<Write cross-reference information@>={lua}
+if record["secno"] == secno then
+  write_cross_reference([[\A]],record["more"])
+  write_cross_reference([[\U]],record["usedin"])
 end
 @* The main procedure.
 @<Main |CCWEAVE| procedure@>={lua}
@@ -637,7 +692,7 @@ read_file(arg[1])
 local file=io.open(jobname .. ".tex","w+")
 assert(file,"Could not open '"..jobname..".tex' for writing.")
 @<Write preamble@>
-build_name_sec_map()
+build_cross_ref_map()
 @<Write index file@>
 @<Write section file@>
 for n,section in ipairs(sections) do
