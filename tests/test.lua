@@ -87,5 +87,54 @@ function test_test005()
   os.remove(name..".tex")
 end
 
+function test_job_name_option()
+  print("create jobname.ccw")
+  local file=io.open("jobname.ccw","w+")
+  assert(file,"Coudn't open jobname.ccw for writing.")
+  file:write([[@* Test job name command line option.]])
+  file:close()
+
+  local dojobweave = function(jobopt,jobname,inpfile,good)
+    local outfile = jobname
+    if jobname == "" then outfile = inpfile end
+    os.remove(outfile..".tex")
+    os.remove(outfile..".idx")
+    os.remove(outfile..".scn")
+
+    local cmd = "ccweave.lua "..jobopt..jobname.." "..inpfile
+    if inpfile ~= "" then cmd = cmd .. ".ccw" end
+    print(">> "..cmd)
+    assert(docmd("lua -- ../bin/"..cmd)==good)
+
+    file=io.open(outfile..".tex")
+    if good ~= true then
+      assert(file == nil,outfile.." should not have been created.")
+    else
+      assert(file,"Coudn't open "..outfile.." for reading.")
+      assert((file:read("*a"):find("Test job name")),"jobname_mod.tex is not what I expected.")
+      file:close()
+    end
+
+    os.remove(outfile..".tex")
+    os.remove(outfile..".idx")
+    os.remove(outfile..".scn")
+
+    print("Pass")
+  end
+
+  dojobweave("-job-name=","jobname_mod","jobname",true)
+  dojobweave("-job-name ","jobname_mod","jobname",true)
+  dojobweave("-job-name=","","jobname",true)
+  dojobweave("--job-name=","jobname_mod","jobname",true)
+  dojobweave("--job-name ","jobname_mod","jobname",true)
+
+  dojobweave("-job-name","","",1)
+  dojobweave("-job-name","","jobname",1)
+  dojobweave("-jorb-name=","something","jobname",1)
+
+  os.remove("jobname.tex")
+  os.remove("jobname.ccw")
+end
+
 lu = LuaUnit.new()
 os.exit(lu:runSuite())

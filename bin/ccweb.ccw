@@ -115,6 +115,43 @@ local function print_table(tree,file,prefix)
   file:write(prefix.."}\n")
 end
 
+@* Command-line arguments.
+My \TeX{} binaries seem to accept options with either single or double-dashed
+prefixes, so I do the same here. They also accept values as separate arguments,
+or in the |--opt=value| form.
+
+Lua does not give me a command-line parsing module, so I had to come up with
+my own, without trying too hard. The |getopt| function gets a map from option
+name to option handler in |spec|, and a usage printing function |usage|. It
+loops through the command line arguments until it thinks it's finished, and
+returns the first non-option index (the input file name should be there).
+@<Functions@>={lua}
+local function getopt(spec,usage)
+  local index = 0
+  while true do
+    index = index + 1
+    local opt = arg[index]
+    if not starts_with(opt,"%-") then return index end
+
+    local name, value = opt:match("^%-%-?([^=]+)(=?.*)$")
+    local handler = spec[name]
+
+    if not name or not handler then
+      io.stderr:write("Unknown option '"..opt.."'\n")
+      usage()
+      os.exit(1)
+    end
+
+    if starts_with(value,"=") then
+      value = value:sub(2)
+    else
+      index = index + 1
+      value = arg[index]
+    end
+
+    handler(value)
+  end
+end
 @** Sections.
 A |CCWEB| section is a chunk of documentation optionally attached to a named
 chunk of code. Sections that start with |@@*| are ``starred.''
@@ -488,13 +525,6 @@ exactly the same way as in a |CWEB|-produced file:
 \inx
 \fin
 \con
-@ The files we will write depend on the ``job name,'' which we initialize
-with a quick and dirty |basename| replacement.
-The files written will be \hbox{\\{jobname}|.tex|},
-\hbox{\\{jobname}|.idx|} (the index), and \hbox{\\{jobname}|.scn|} (for
-the section names).
-@<|CCWEAVE| global variables@>={lua}
-local jobname = string.gsub(string.gsub(arg[1],".*[/\]",""),"%.[^.]*$","")
 @* Verbatim print.
 When |CWEB| weaves a file, it goes to great lenghts to pretty-print C code.
 Since |CCWEB| is language agnostic, it does not even try -- it simply
@@ -702,13 +732,41 @@ if record["secno"] == secno then
   write_cross_reference([[\U]],record["usedin"],file)
 end
 @* The main procedure.
+We start by parsing the command line options to find the input file name
+and the job name. If the job name is not explicitly given, we initialize
+it with a quick and dirty |basename| replacement.
+@<|CCWEAVE| global variables@>={lua}
+local jobname
+local inputname
+@ @<Main |CCWEAVE| procedure@>={lua}
+local index = getopt({ ["job-name"] = function(v) jobname = v end }, usage)
+inputname = arg[index]
+if not inputname then
+  io.stderr:write("You must specify the input file name\n")
+  usage()
+  os.exit(1)
+end
+
+if not jobname or jobname == "" then
+  jobname = string.gsub(string.gsub(inputname,".*[/\]",""),"%.[^.]*$","")
+end
+@ @<|CCWEAVE| functions@>={lua}
+local function usage()
+  io.stderr:write("Usage: "..arg[0]..[[ [-job-name <name>] <input>
+Weaves <input> file into <input>.tex, or <name>.tex if the -job-name option
+is specified.
+]])
+end
+@ We now go throuth the motions: Read the file, build the cross-reference
+map, then write the preamble, and index and section files. Next comes
+the weaved content, followed by the postamble.
 @<Main |CCWEAVE| procedure@>={lua}
-read_file(arg[1])
+read_file(inputname)
 
 local file=io.open(jobname .. ".tex","w+")
 assert(file,"Could not open '"..jobname..".tex' for writing.")
-@<Write preamble@>
 build_cross_ref_map()
+@<Write preamble@>
 @<Write index file@>
 @<Write section file@>
 for n,section in ipairs(sections) do
