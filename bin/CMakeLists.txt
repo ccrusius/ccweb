@@ -1,0 +1,23 @@
+ADD_CUSTOM_COMMAND(
+  OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/ccweave.lua ${CMAKE_CURRENT_BINARY_DIR}/cctangle.lua
+  COMMAND lua ${CMAKE_CURRENT_SOURCE_DIR}/bootstrap.lua ${CMAKE_CURRENT_SOURCE_DIR}/ccweb.ccw
+  DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/bootstrap.lua ${CMAKE_CURRENT_SOURCE_DIR}/ccweb.ccw)
+
+FIND_PACKAGE(Lua51)
+INCLUDE_DIRECTORIES(${LUA_INCLUDE_DIR})
+
+FOREACH(prog cctangle ccweave)
+  ADD_CUSTOM_COMMAND(
+    OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/${prog}.c
+    COMMAND 
+      env LUA_PATH=${PROJECT_SOURCE_DIR}/submodules/lua2c/lib/?.lua
+      lua
+      ${PROJECT_SOURCE_DIR}/submodules/lua2c/lua2c.lua
+      ${CMAKE_CURRENT_BINARY_DIR}/${prog}.lua
+      > ${CMAKE_CURRENT_BINARY_DIR}/${prog}.c
+    DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/${prog}.lua)
+  
+  ADD_EXECUTABLE(${prog} ${prog}.c)
+  TARGET_LINK_LIBRARIES(${prog} ${LUA_LIBRARIES})
+ENDFOREACH(prog)
+
