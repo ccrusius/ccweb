@@ -7,3 +7,5 @@
 bin/ccweave.lua
 bin/cctangle.lua
 bin/ccweb.tex
+build/
+bin/
