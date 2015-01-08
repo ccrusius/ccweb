@@ -1,3 +1,6 @@
+#
+# Bootstrap: generate ccweave.lua and cctangle.lua from ccweb.ccw
+#
 ADD_CUSTOM_COMMAND(
   OUTPUT
     ${CMAKE_CURRENT_BINARY_DIR}/ccweave.lua ${CMAKE_CURRENT_BINARY_DIR}/cctangle.lua
@@ -8,7 +11,9 @@ ADD_CUSTOM_COMMAND(
 
 FIND_PACKAGE(Lua51)
 INCLUDE_DIRECTORIES(${LUA_INCLUDE_DIR})
-
+#
+# Generate binaries with lua2c
+#
 FOREACH(prog cctangle ccweave)
   ADD_CUSTOM_COMMAND(
     OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/${prog}.c
@@ -22,13 +27,18 @@ FOREACH(prog cctangle ccweave)
 
   ADD_EXECUTABLE(${prog} ${prog}.c)
   TARGET_LINK_LIBRARIES(${prog} ${LUA_LIBRARIES})
+
+  INSTALL(TARGETS ${prog} RUNTIME DESTINATION bin)
+  INSTALL(FILES ${CMAKE_CURRENT_BINARY_DIR}/${prog}.lua DESTINATION bin)
 ENDFOREACH(prog)
 
 FIND_PACKAGE(LATEX)
 IF(PDFLATEX_COMPILER)
   STRING(REPLACE "pdflatex" "pdftex" PDFTEX_COMPILER "${PDFLATEX_COMPILER}")
 ENDIF()
-
+#
+# Generate documentation with newly generated cctangle binary
+#
 ADD_CUSTOM_COMMAND(
   OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/ccweb.tex
   COMMAND
@@ -42,4 +52,5 @@ ADD_CUSTOM_COMMAND(
     ${PDFTEX_COMPILER} ${CMAKE_CURRENT_BINARY_DIR}/ccweb.tex
   DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/ccweb.tex)
 
-ADD_CUSTOM_TARGET(FOO DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/ccweb.pdf)
+ADD_CUSTOM_TARGET(ccweb.pdf ALL DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/ccweb.pdf)
+INSTALL(FILES ${CMAKE_CURRENT_BINARY_DIR}/ccweb.pdf DESTINATION doc)
