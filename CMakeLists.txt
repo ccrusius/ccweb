@@ -57,3 +57,12 @@ ADD_CUSTOM_COMMAND(
 
 ADD_CUSTOM_TARGET(ccweb.pdf ALL DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/ccweb.pdf)
 INSTALL(FILES ${CMAKE_CURRENT_BINARY_DIR}/ccweb.pdf DESTINATION doc)
+#
+# Test
+#
+ENABLE_TESTING()
+FOREACH(test test_test001 test_test002 test_test003 test_test004 test_test005 test_job_name_option)
+  ADD_TEST(NAME ${test}
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/tests
+    COMMAND lua ${CMAKE_CURRENT_SOURCE_DIR}/tests/test.lua ${test})
+ENDFOREACH(test)

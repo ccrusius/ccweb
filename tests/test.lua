@@ -6,18 +6,18 @@ end
 
 local function docmd(cmd)
   local status = os.execute(cmd)
-  if status == 0 then status = true end -- Windows
-  return status
+  if status == 0 or status == true then return true end
+  return false
 end
 
 local function docctangle(filename)
     print("cctangle "..filename)
-    return docmd("lua ../bin/cctangle.lua "..filename..".ccw > "..filename..".out")
+    return docmd("../bin/cctangle "..filename..".ccw > "..filename..".out")
 end
 
 local function doccweave(filename)
     print("ccweave "..filename)
-    return docmd("lua ../bin/ccweave.lua "..filename..".ccw")
+    return docmd("../bin/ccweave "..filename..".ccw")
 end
 
 local function diff(from,to)
@@ -128,9 +128,9 @@ function test_job_name_option()
   dojobweave("--job-name=","jobname_mod","jobname",true)
   dojobweave("--job-name ","jobname_mod","jobname",true)
 
-  dojobweave("-job-name","","",1)
-  dojobweave("-job-name","","jobname",1)
-  dojobweave("-jorb-name=","something","jobname",1)
+  dojobweave("-job-name","","",false)
+  dojobweave("-job-name","","jobname",false)
+  dojobweave("-jorb-name=","something","jobname",false)
 
   os.remove("jobname.tex")
   os.remove("jobname.ccw")
