@@ -96,7 +96,7 @@ end
 quotes, and we do it all at one go by calling the |unquoteline| function.
 @<Functions@>={lua}
 local function unquoteline(line)
-  return (string.gsub(line,"@@\(.\)","%1"))
+  return (string.gsub(line,"@@(.)","%1"))
 end
 @ Finally, once I started fancyfying this code, I started running into many problems.
 Since Lua does not have support for C-style |#line| directives, I chose to
@@ -748,7 +748,7 @@ if not inputname then
 end
 
 if not jobname or jobname == "" then
-  jobname = string.gsub(string.gsub(inputname,".*[/\]",""),"%.[^.]*$","")
+  jobname = string.gsub(string.gsub(inputname,".*[/\\]",""),"%.[^.]*$","")
 end
 @ @<|CCWEAVE| functions@>={lua}
 local function usage()

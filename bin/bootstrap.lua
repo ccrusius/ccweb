@@ -1,6 +1,6 @@
 local sections = {}
 local function unquoteline(line)
-  return (string.gsub(line,"@\(.\)","%1"))
+  return (string.gsub(line,"@(.)","%1"))
 end
 
 local function process_named_reference(line)
