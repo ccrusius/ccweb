@@ -17,11 +17,17 @@ INCLUDE_DIRECTORIES(${LUA_INCLUDE_DIR})
 #
 # Generate binaries with lua2c
 #
+# Lua2C requires us to set LUA_PATH, unfortunately. This is easy enough if you're not
+# using Windows, which is what most of humanity is using.
+#
+IF(NOT CMAKE_VERSION VERSION_LESS "3.1")
+  SET(ENV_PRE ${CMAKE_COMMAND} -E)
+ENDIF()
 FOREACH(prog cctangle ccweave)
   ADD_CUSTOM_COMMAND(
     OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/${prog}.c
     COMMAND
-      env LUA_PATH=${PROJECT_SOURCE_DIR}/submodules/lua2c/lib/?.lua
+      ${ENV_PRE} env LUA_PATH=${PROJECT_SOURCE_DIR}/submodules/lua2c/lib/?.lua
       lua
       ${PROJECT_SOURCE_DIR}/submodules/lua2c/lua2c.lua
       ${CMAKE_CURRENT_BINARY_DIR}/${prog}.lua
@@ -45,7 +51,7 @@ ENDIF()
 ADD_CUSTOM_COMMAND(
   OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/ccweb.tex
   COMMAND
-    ${CMAKE_CURRENT_BINARY_DIR}/ccweave ${CMAKE_CURRENT_SOURCE_DIR}/ccweb.ccw
+    ccweave ${CMAKE_CURRENT_SOURCE_DIR}/ccweb.ccw
   DEPENDS
     ${CMAKE_CURRENT_BINARY_DIR}/ccweave ${CMAKE_CURRENT_SOURCE_DIR}/ccweb.ccw)
 
