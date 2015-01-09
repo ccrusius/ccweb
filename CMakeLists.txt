@@ -1,5 +1,6 @@
 CMAKE_MINIMUM_REQUIRED(VERSION 2.6)
 PROJECT(CCWEB)
+CMAKE_POLICY(VERSION 2.6)
 SET(CMAKE_INSTALL_PREFIX ${PROJECT_SOURCE_DIR})
 #------------------------------------------------------------------------------
 #
@@ -41,6 +42,7 @@ FOREACH(prog cctangle ccweave)
 
   ADD_EXECUTABLE(${prog} ${prog}.c)
   TARGET_LINK_LIBRARIES(${prog} ${LUA_LIBRARIES})
+  GET_TARGET_PROPERTY(${prog}_COMMAND ${prog} LOCATION)
 
   INSTALL(TARGETS ${prog} RUNTIME DESTINATION bin COMPONENT binaries)
   INSTALL(FILES ${CMAKE_CURRENT_BINARY_DIR}/${prog}.lua DESTINATION bin COMPONENT scripts)
@@ -68,22 +70,18 @@ ADD_CUSTOM_COMMAND(
     ${CMAKE_CURRENT_BINARY_DIR}/ccweb.tex
     ${CMAKE_CURRENT_BINARY_DIR}/ccweb.idx
     ${CMAKE_CURRENT_BINARY_DIR}/ccweb.scn
-  COMMAND
-    ${CMAKE_CURRENT_BINARY_DIR}/ccweave ${CMAKE_CURRENT_SOURCE_DIR}/ccweb.ccw
-  DEPENDS
-    ccweave ${CMAKE_CURRENT_SOURCE_DIR}/ccweb.ccw
-  COMMENT "Generating ccweb.tex")
-
-ADD_CUSTOM_COMMAND(
-  OUTPUT # Leave out ccweb.pdf so we can make it a target later on.
+    # Leave out ccweb.pdf so we can make it a target later on.
     ${CMAKE_CURRENT_BINARY_DIR}/ccweb.log
     ${CMAKE_CURRENT_BINARY_DIR}/ccweb.toc
   COMMAND
+    ${ccweave_COMMAND} ${CMAKE_CURRENT_SOURCE_DIR}/ccweb.ccw
+  COMMAND
     ${PDFTEX_COMPILER} ${CMAKE_CURRENT_BINARY_DIR}/ccweb.tex
-  DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/ccweb.tex
+  DEPENDS
+    ccweave ${CMAKE_CURRENT_SOURCE_DIR}/ccweb.ccw
   COMMENT "Generating ccweb.pdf")
 
-ADD_CUSTOM_TARGET(ccweb.pdf ALL DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/ccweb.log)
+ADD_CUSTOM_TARGET(ccweb.pdf ALL DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/ccweb.tex)
 SET_DIRECTORY_PROPERTIES(PROPERTIES ADDITIONAL_MAKE_CLEAN_FILES ccweb.pdf)
 
 INSTALL(FILES ${CMAKE_CURRENT_BINARY_DIR}/ccweb.pdf DESTINATION doc COMPONENT documentation)
