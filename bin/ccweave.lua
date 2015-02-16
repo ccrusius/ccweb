@@ -312,7 +312,7 @@ local function write_section(secno,section,file)
     local name = section["name"]
     local record = cross_ref_map[name]
   
-    if table.getn(section["body"]) > 0 then file:write("\\Y") end
+    if #(section["body"]) > 0 then file:write("\\Y") end
     file:write("\\B\\4")
     write_section_reference(name,file)
     file:write("${}")
