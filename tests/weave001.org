@@ -1,0 +1,17 @@
+#+TITLE: Weaving test number 1
+#+AUTHOR: Cesar Crusius
+#+STARTUP: indent
+
+* Top-level section
+
+Text with /italic/, *bold*, ={verbatim}=, and ~code~.
+
+#+BEGIN_SRC haskell
+main :: IO ()
+#+END_SRC
+
+A paragraph.
+
+** Sub-section
+
+* Another top-level section

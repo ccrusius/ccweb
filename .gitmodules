@@ -1,6 +1,0 @@
-[submodule "tests/luaunit"]
-	path = tests/luaunit
-	url = https://github.com/bluebird75/luaunit.git
-[submodule "submodules/lua2c"]
-	path = submodules/lua2c
-	url = https://github.com/davidm/lua2c.git

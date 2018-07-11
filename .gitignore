@@ -4,8 +4,11 @@
 *.toc
 *.idx
 *.scn
-bin/ccweave.lua
-bin/cctangle.lua
 bin/ccweb.tex
 build/
-bin/
+bin/ccweave
+bin/cctangle
+bootstrap/ccweave
+work/
+stack.yaml
+ccweb.cabal

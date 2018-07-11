@@ -1,0 +1,85 @@
+#+TITLE: Tangling Tests
+#+AUTHOR: Cesar Crusius
+#+STARTUP: indent
+#+PROPERTY: header-args :comments no :noweb no-export :padline no :tangle-mode (identity #o644) :tangle no :mkdirp yes
+
+* 001: Basic Haskell indentation
+
+#+BEGIN_SRC haskell :tangle "tests/out/tangle001.hs"
+main :: IO ()
+main = do
+  <<main>>
+
+hello :: String
+hello = "Hello, world!"
+#+END_SRC
+
+#+NAME: main
+#+BEGIN_SRC haskell
+putStrLn str
+where
+  <<str>>
+#+END_SRC
+
+#+NAME: str
+#+BEGIN_SRC haskell
+str = hello
+#+END_SRC
+
+* 002 and 003: Multiple sections to a Haskell file
+:PROPERTIES:
+:header-args: :tangle "tests/out/tangle002.hs"
+:END:
+
+#+BEGIN_SRC haskell
+main :: IO ()
+main = putStrLn str
+#+END_SRC
+
+#+BEGIN_SRC haskell :tangle "tests/out/tangle003.hs"
+main = putStrLn "test003"
+#+END_SRC
+
+#+BEGIN_SRC haskell
+str :: String
+str = "Hello, world!"
+#+END_SRC
+
+* 004: Line number pragmas
+:PROPERTIES:
+:header-args: :tangle "tests/out/tangle004.hs" :comments yes
+:END:
+
+#+BEGIN_SRC haskell
+main :: IO ()
+main = do
+  putStrLn str
+  <<Put string again>>
+  putStrLn str
+#+END_SRC
+
+#+BEGIN_SRC haskell
+str :: String
+str = "Hello, world!"
+#+END_SRC
+
+#+NAME: Put string again
+#+BEGIN_SRC haskell
+putStrLn str
+#+END_SRC
+
+* 005: Mixed line numbers on and off
+:PROPERTIES:
+:header-args: :tangle "tests/out/tangle005.hs" :comments yes
+:END:
+
+#+BEGIN_SRC shell
+#!/bin/bash
+<<005: With line numbers>>
+echo "Hello, world!"
+#+END_SRC
+
+#+NAME: 005: With line numbers
+#+BEGIN_SRC haskell
+main :: IO ()
+#+END_SRC
