@@ -397,10 +397,10 @@ tangleFile opts doc (fp, bs) = do
       when (mkDir && dir /= ".") $ do
         logM (logLevel opts) Info $ "** Creating missing directories..."
         D.createDirectoryIfMissing True dir
-        exists <- F.fileExist fp
-        when exists $ do
-          logM (logLevel opts) Info $ "** Removing pre-existing file..."
-          F.removeLink fp
+      exists <- F.fileExist fp
+      when exists $ do
+        logM (logLevel opts) Info $ "** Removing pre-existing file..."
+        F.removeLink fp
       logM (logLevel opts) Info $
         "** Writing file contents..."
       writeFile fp contents
