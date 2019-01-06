@@ -2,10 +2,15 @@
 main :: IO ()
 main = do
   putStrLn str
-{-# LINE 68 "tests/tangle.org" #-}
+{-# LINE 69 "tests/tangle.org" #-}
   putStrLn str
 {-# LINE 58 "tests/tangle.org" #-}
+  putStrLn "(" >> 
+{-# LINE 69 "tests/tangle.org" #-}
+                  putStrLn str
+{-# LINE 58 "tests/tangle.org" #-}
+                               >> putStrLn ")"
   putStrLn str
-{-# LINE 62 "tests/tangle.org" #-}
+{-# LINE 63 "tests/tangle.org" #-}
 str :: String
 str = "Hello, world!"

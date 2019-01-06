@@ -25,10 +25,6 @@ unindent i (Raw s)
   | isPrefixOf i s = Raw $ drop (length i) s
   | otherwise = Raw s
 unindent _ l = l
-
-isRaw :: Line -> Bool
-isRaw (Raw _) = True
-isRaw _ = False
 #+END_SRC
 
 #+NAME: Tangler
@@ -44,6 +40,21 @@ data TangleState = TangleState
 #+BEGIN_SRC haskell
 type Tangler a = State TangleState a
 #+END_SRC
+
+#+NAME: Tangler
+#+BEGIN_SRC haskell
+getIndent :: Tangler String
+getIndent = indent <$> get
+
+setIndentFrom :: String -> Tangler ()
+setIndentFrom str = modify
+  (\s -> s{ indent = replicate (length str) ' ' })
+
+addIndentFrom :: String -> Tangler ()
+addIndentFrom str = modify
+  (\s -> s{ indent = indent s ++ replicate (length str) ' ' })
+#+END_SRC
+
 
 #+NAME: Tangler
 #+BEGIN_SRC haskell
@@ -102,28 +113,68 @@ instance Tangle CodeLine where
                 (Literal p _) -> p
                 (SectionReference p _) -> p
         pragma = LinePragma (blockLanguage block) pos
-    ls <- reverse <$> foldlM revacc [Raw ind] elements
+    ls <- removeLeadingEmptyLine . reverse <$> foldlM revacc [Raw ind] elements
     modify (\s -> s{ indent = ind })
     case headerArg ":comments" block of
       Just (YesNo True) -> return $ pragma : ls
       _ -> return ls
       where
+        removeLeadingEmptyLine :: [Line] -> [Line]
+        removeLeadingEmptyLine a@(Raw l:p@(LinePragma _ _):ls)
+          | all isSpace l = p:ls
+          | otherwise = a
+        removeLeadingEmptyLine a = a
+
+        breakRaw :: [Line] -> ([Line],[Line])
+        breakRaw = break (\case { (Raw _) -> True; _ -> False })
+
         revacc :: [Line] -> CodeElement -> Tangler [Line]
         revacc acc element = do
-          let (pre, (Raw l:ls)) = break isRaw acc
-          modify (\s -> s{ indent = replicate (length l) ' ' })
-          (break isRaw <$> tangle element) >>= \case
-            (pre', (Raw l':ls')) -> return
-                                  $ reverse ls'
-                                  ++ [Raw(l ++ l')]
-                                  ++ reverse pre'
-                                  ++ pre
-                                  ++ ls
-            (pre', []) -> return
-                         $ reverse pre'
-                         ++ pre
-                         ++ ls
-            _ -> error $ "unreachable case"
+          let (xxxpost, xxxpre) = breakRaw acc
+          case (xxxpost, xxxpre, element) of
+            <<Tangle next code element>>
+            _ -> error $ "unreachable element tangling case"
+#+END_SRC
+
+#+NAME: Tangle next code element
+#+BEGIN_SRC haskell
+([], (Raw l:ls), Literal _ s) -> do
+  addIndentFrom s
+  return $ Raw (l ++ s) : ls
+#+END_SRC
+
+If the literal appears right after a line pragma, then I need to
+insert yet another line pragma to re-position the source code correctly.
+
+#+NAME: Tangle next code element
+#+BEGIN_SRC haskell
+(_, _, Literal pos s) -> do
+  i <- getIndent
+  b <- top . blocks <$> get
+  addIndentFrom s
+  return $ LinePragma (blockLanguage b) pos : Raw (i ++ s) : acc
+#+END_SRC
+
+#+NAME: Tangle next code element
+#+BEGIN_SRC haskell
+(post, (Raw l:ls), SectionReference pos name) -> do
+  bs <- <<Gather code blocks named ~name~>> :: Tangler [SourceBlock]
+  when (null bs) (error $ "source block not defined anywhere: " ++ show name)
+  tangledLines <- concat <$> mapM tangle bs :: Tangler [Line]
+  let (pre, (Raw first : rest)) = breakRaw tangledLines
+  acc' <- case (pre, post) of
+    ([], []) -> do
+      i <- getIndent
+      let (Raw first') = unindent i (Raw first)
+      addIndentFrom first'
+      return $ reverse rest ++ [Raw(l ++ first')] ++ ls
+    _ -> do
+      setIndentFrom first
+      return $ reverse tangledLines ++ acc
+  block <- top . blocks <$> get
+  case headerArg ":comments" block of
+    Just (YesNo True) -> return $ LinePragma (blockLanguage block) pos : acc'
+    _ -> return acc'
 #+END_SRC
 
 Tangling of code parts is the last piece of the puzzle. Literals are
@@ -134,21 +185,6 @@ indented, so one can have proper "inline" code blocks, such as
 int main(void) { <<do everything>>; return 0; }
 #+END_SRC
 
-#+NAME: Tangler
-#+BEGIN_SRC haskell
-instance Tangle CodeElement where
-  tangle (Literal _ s) = return [Raw s]
-  tangle (SectionReference _ name) = do
-    bs <- <<Gather code blocks named ~name~>> :: Tangler [SourceBlock]
-    when (null bs) (error $ "source block not defined anywhere: " ++ show name)
-    ls <- concat <$> mapM tangle bs :: Tangler [Line]
-    ls' <- <<Unindent first line of ~ls~>>
-    return ls'
---  if runProperty (commentsProperty $ codeBlockProperties parent)
---     then ls ++ [Location (codeBlockLanguage parent) loc]
---     else ls
-#+END_SRC
-
 #+NAME: Gather code blocks named ~name~
 #+BEGIN_SRC haskell
 filter (\b -> case (blockName b) of
@@ -157,14 +193,6 @@ filter (\b -> case (blockName b) of
   . mapMaybe sectionSourceBlock
   . orgSections
   . document
-  <$> get
-#+END_SRC
-
-#+NAME: Unindent first line of ~ls~
-#+BEGIN_SRC haskell
-(\s -> case (break isRaw ls) of
-        (_, []) -> ls
-        (pre, (x:xs)) -> pre ++ (unindent (indent s) x : xs))
   <$> get
 #+END_SRC
 
@@ -236,7 +264,8 @@ foldr (\x xs -> let a = (x:xs) in case a of
             then x : h : xs'
             else a
           _ -> a)
-      [] ls
+      []
+      ls
 #+END_SRC
 
 #+NAME: Tangler
@@ -261,7 +290,6 @@ main = do
 
   home <- Env.getEnv "HOME"
   let fs = <<Gather sections to tangle to files>> :: [(FilePath, [SourceBlock])]
-  logM (logLevel opts) Debug $ "files:" ++ show (map fst fs)
   when (listInputFiles opts) $ <<List input files>>
   when (listOutputFiles opts) $ <<List output files>>
 

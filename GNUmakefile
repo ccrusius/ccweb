@@ -39,10 +39,10 @@ bootstrap/%: bin/%.hs test_%
 clean:
 	rm -f $(filter-out GNUmakefile,${OUTPUT_FILES})
 
-${OUTPUT_FILES}: ccweb.org
+${OUTPUT_FILES}: ${SOURCE_FILES}
 	@mkdir -p bin
 	@rm -f $@
-	${BOOTSTRAP_TANGLER} $<
+	${BOOTSTRAP_TANGLER} ccweb.org
 bin/%: bin/%.hs
 	@rm -f $@
 	stack build --trace $(subst bin/,ccweb:,$@)

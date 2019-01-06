@@ -60,18 +60,17 @@ bootstrap/%: bin/%.hs test_%
 	@chmod 555 $@
 #+END_SRC
 
-The bootstrapper is used to generate all the files, which are
-themselves listed by the bootstrapper.
+The bootstrapper is used to generate all the files.
 
 #+NAME: =GNUmakefile= rules
 #+BEGIN_SRC makefile
 clean:
 	rm -f $(filter-out GNUmakefile,${OUTPUT_FILES})
 
-${OUTPUT_FILES}: ccweb.org
+${OUTPUT_FILES}: ${SOURCE_FILES}
 	@mkdir -p bin
 	@rm -f $@
-	${BOOTSTRAP_TANGLER} $<
+	${BOOTSTRAP_TANGLER} ccweb.org
 #+END_SRC
 
 #+NAME: =GNUmakefile= rules

@@ -55,6 +55,7 @@ main :: IO ()
 main = do
   putStrLn str
   <<Put string again>>
+  putStrLn "(" >> <<Put string again>> >> putStrLn ")"
   putStrLn str
 #+END_SRC
 
