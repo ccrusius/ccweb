@@ -51,7 +51,7 @@ import Control.Monad (void, when)
 import Control.Monad.State (State, get, modify, runState)
 import Data.Foldable (foldlM, foldrM)
 import Data.Char (isPrint, isSpace, ord)
-import Data.List (intercalate, isPrefixOf, isSuffixOf)
+import Data.List (intercalate, isPrefixOf, isSuffixOf, nub, sort)
 import Data.Maybe (fromJust, isJust, mapMaybe)
 import qualified Data.Map as Map
 import GHC.Exts (IsList(..), groupWith, sortWith)
@@ -452,7 +452,8 @@ main = do
   home <- Env.getEnv "HOME"
   let fs = <<Gather sections to tangle to files>> :: [(FilePath, [SourceBlock])]
   logM (logLevel opts) Debug $ "files:" ++ show (map fst fs)
-  when (showMakeDep opts) $ <<Print tangling makefile dependency line>>
+  when (listInputFiles opts) $ <<List input files>>
+  when (listOutputFiles opts) $ <<List output files>>
 
   mapM_ (tangleFile opts org) fs
   where
@@ -460,7 +461,6 @@ main = do
       ( O.fullDesc
       <> O.progDesc "Tangle the input FILE"
       <> O.header "cctangle - A literate programming tangler" )
-
 #+END_SRC
 
 #+NAME: Gather sections to tangle to files
@@ -476,9 +476,17 @@ map (\bs -> (fst (head bs), map snd bs))
   $ orgSections org
 #+END_SRC
 
-#+NAME: Print tangling makefile dependency line
+#+NAME: List input files
 #+BEGIN_SRC haskell
-putStrLn $ intercalate " " (map fst fs) ++ ": " ++ inputFile opts
+mapM_ putStrLn (
+  nub . sort .
+  map (\(OrgLine p _) -> P.sourceName p) $ (toList ingested)
+)
+#+END_SRC
+
+#+NAME: List output files
+#+BEGIN_SRC haskell
+mapM_ putStrLn (map fst fs)
 #+END_SRC
 
 ** Line numbers
@@ -608,7 +616,8 @@ import qualified Options.Applicative as O
 data Options = Options
   { logLevel :: LogLevel
   , dryRun :: Bool
-  , showMakeDep :: Bool
+  , listInputFiles :: Bool
+  , listOutputFiles :: Bool
   , inputFile :: String
   }
 
@@ -616,7 +625,8 @@ instance Pretty Options where
   pretty o = pretty $ PrettyStruct "Options"
     [ ("log level", pretty $ logLevel o)
     , ("dry-run", pretty $ dryRun o)
-    , ("make dependency", pretty $ showMakeDep o)
+    , ("list-input-files", pretty $ listInputFiles o)
+    , ("list-output-files", pretty $ listOutputFiles o)
     , ("input file", pretty $ inputFile o)
     ]
 
@@ -624,11 +634,8 @@ tanglerOptionParser :: O.Parser Options
 tanglerOptionParser = Options
   <$> <<Parse log level command line flags>>
   <*> dryRunParser
-  <*> O.switch
-  ( O.short 'M'
-  <> O.long "show-make-dep"
-  <> O.help "If given, output a line with a suitable make depencency."
-  )
+  <*> <<The =-I= command line flag>>
+  <*> <<The =-O= command line flag>>
   <*> (<<Parse input file name>>)
 #+END_SRC
 
@@ -667,6 +674,24 @@ O.flag Warning Quiet
 O.argument O.str
   ( O.metavar "FILE"
   <> O.help "The name of the input file."
+  )
+#+END_SRC
+
+#+NAME: The =-O= command line flag
+#+BEGIN_SRC haskell
+O.switch
+  ( O.short 'O'
+  <> O.long "list-output-files"
+  <> O.help "If given, list the files that would be written out, one per line."
+  )
+#+END_SRC
+
+#+NAME: The =-I= command line flag
+#+BEGIN_SRC haskell
+O.switch
+  ( O.short 'I'
+  <> O.long "list-input-files"
+  <> O.help "If given, list the files that have to be read in, one per line."
   )
 #+END_SRC
 

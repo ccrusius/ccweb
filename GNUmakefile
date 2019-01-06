@@ -1,9 +1,13 @@
 all: bin/cctangle bin/ccweave
 test: test_cctangle
 
+BOOTSTRAP_TANGLER := bootstrap/cctangle
+
+SOURCE_FILES := $(shell ${BOOTSTRAP_TANGLER} -Inq ccweb.org)
+OUTPUT_FILES := $(shell ${BOOTSTRAP_TANGLER} -Onq ccweb.org)
 inotify:
-	while inotifywait -e modify ccweb.org; do \
-	make test; \
+	while inotifywait -e modify ${SOURCE_FILES}; do \
+	make -j test; \
 	done
 define STACK_PREAMBLE
 #!/usr/bin/env stack
@@ -24,8 +28,6 @@ endef
 
 export STACK_PREAMBLE
 
-BOOTSTRAP_TANGLER := bootstrap/cctangle
-
 bootstrap: ${BOOTSTRAP_TANGLER}
 
 bootstrap/%: bin/%.hs test_%
@@ -34,12 +36,10 @@ bootstrap/%: bin/%.hs test_%
 	@echo "$$STACK_PREAMBLE" > $@
 	@cat $< >> $@
 	@chmod 555 $@
-FILES := $(shell bootstrap/cctangle -Mnq ccweb.org | cut -f1 -d:)
-
 clean:
-	rm -f $(filter-out GNUmakefile,${FILES})
+	rm -f $(filter-out GNUmakefile,${OUTPUT_FILES})
 
-${FILES}: ccweb.org
+${OUTPUT_FILES}: ccweb.org
 	@mkdir -p bin
 	@rm -f $@
 	${BOOTSTRAP_TANGLER} $<
@@ -52,8 +52,8 @@ DIFF := git --no-pager diff --no-index
 test_cctangle: bin/cctangle
 	@rm -f tests/out/tangle*
 	stack exec cctangle -- -nvvvv tests/tangle.org >/dev/null
-	stack exec cctangle -- -Mnvvvv tests/tangle.org >/dev/null
-	stack exec cctangle -- -Mnvvvv ccweb.org >/dev/null
+	stack exec cctangle -- -IOnvvvv tests/tangle.org >/dev/null
+	stack exec cctangle -- -IOnvvvv ccweb.org >/dev/null
 	stack exec cctangle -- tests/tangle.org >/dev/null
 	${DIFF} tests/ref/tangle001.hs tests/out/tangle001.hs
 	${DIFF} tests/ref/tangle002.hs tests/out/tangle002.hs
