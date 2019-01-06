@@ -1,0 +1,135 @@
+* Building
+
+One interesting application of a multi-file literate programming tool
+is that not only I can generate the source files, but I can also
+generate the /build system/ itself.
+
+#+BEGIN_SRC makefile :tangle "GNUmakefile" :tangle-mode (identity #o644)
+all: bin/cctangle bin/ccweave
+test: test_cctangle
+
+<<=GNUmakefile= rules>>
+#+END_SRC
+
+The rule below is the one I use most often: I have a terminal open
+with =make inotify= running. This makes the compilation and tests run
+every time I change this source file.
+
+#+NAME: =GNUmakefile= rules
+#+BEGIN_SRC makefile
+inotify:
+	while inotifywait -e modify ccweb.org; do \
+	make test; \
+	done
+#+END_SRC
+
+Next, I deal with bootstrapping: In order to tangle this file, I need
+a tangler. In theory there is one everybody can install -- Emacs
+itself. But that is a heavy burden on users. An easier way is to use
+the Haskell tool stack and have the bootstrapping executables be the
+source code, with a =stack script= preamble.
+
+The =bootstrap= target compiles everything (with the previous
+bootstrapper), runs the tests, and, if everything looks fine, builds
+the new bootstrapper from the new sources.
+
+#+NAME: =GNUmakefile= rules
+#+BEGIN_SRC makefile
+define STACK_PREAMBLE
+#!/usr/bin/env stack
+<<Stack-preamble>>
+endef
+
+export STACK_PREAMBLE
+
+BOOTSTRAP_TANGLER := bootstrap/cctangle
+
+bootstrap: ${BOOTSTRAP_TANGLER}
+
+bootstrap/%: bin/%.hs test_%
+	@mkdir -p bootstrap
+	@rm -f $@
+	@echo "$$STACK_PREAMBLE" > $@
+	@cat $< >> $@
+	@chmod 555 $@
+#+END_SRC
+
+The bootstrapper is used to generate all the files, which are
+themselves listed by the bootstrapper.
+
+#+NAME: =GNUmakefile= rules
+#+BEGIN_SRC makefile
+FILES := $(shell bootstrap/cctangle -Mnq ccweb.org | cut -f1 -d:)
+
+clean:
+	rm -f $(filter-out GNUmakefile,${FILES})
+
+${FILES}: ccweb.org
+	@mkdir -p bin
+	@rm -f $@
+	${BOOTSTRAP_TANGLER} $<
+#+END_SRC
+
+#+NAME: =GNUmakefile= rules
+#+BEGIN_SRC makefile
+bin/%: bin/%.hs
+	@rm -f $@
+	stack build --trace $(subst bin/,ccweb:,$@)
+	cp `stack exec -- which $(subst bin/,,$@)` $@
+#+END_SRC
+
+#+NAME: =GNUmakefile= rules
+#+BEGIN_SRC makefile
+DIFF := git --no-pager diff --no-index
+
+test_cctangle: bin/cctangle
+	@rm -f tests/out/tangle*
+	stack exec cctangle -- -nvvvv tests/tangle.org >/dev/null
+	stack exec cctangle -- -Mnvvvv tests/tangle.org >/dev/null
+	stack exec cctangle -- -Mnvvvv ccweb.org >/dev/null
+	stack exec cctangle -- tests/tangle.org >/dev/null
+	${DIFF} tests/ref/tangle001.hs tests/out/tangle001.hs
+	${DIFF} tests/ref/tangle002.hs tests/out/tangle002.hs
+	${DIFF} tests/ref/tangle003.hs tests/out/tangle003.hs
+	${DIFF} tests/ref/tangle004.hs tests/out/tangle004.hs
+	${DIFF} tests/ref/tangle005.hs tests/out/tangle005.hs
+	@rm -f tests/out/tangle*
+
+test_ccweave: bin/ccweave
+	@rm -f tests/ref/weave*
+	stack exec ccweave -- tests/weave001.org
+#+END_SRC
+
+#+BEGIN_SRC yaml :tangle "stack.yaml" :tangle-mode (identity #o644)
+resolver: lts-12.22
+
+packages:
+  - '.'
+#+END_SRC
+
+#+BEGIN_SRC yaml :tangle "ccweb.cabal" :tangle-mode (identity #o644)
+name: ccweb
+version: 1.0.0.0
+build-type: Simple
+cabal-version: >=1.10
+
+executable cctangle
+  main-is: bin/cctangle.hs
+  build-depends:
+                base, containers, directory, filepath, hostname, mtl,
+                optparse-applicative, parsec, pretty, unix
+  default-language: Haskell2010
+  ghc-options: -Wall -Werror -O2 -rtsopts
+  hs-source-dirs: .
+  other-modules:
+
+executable ccweave
+  main-is: bin/ccweave.hs
+  build-depends:
+                base, containers, directory, filepath, hostname, mtl,
+                optparse-applicative, parsec, pretty, unix
+  default-language: Haskell2010
+  ghc-options: -Wall -O2 -rtsopts
+  hs-source-dirs: .
+  other-modules:
+#+END_SRC
