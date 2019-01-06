@@ -6,8 +6,7 @@
 *.scn
 bin/ccweb.tex
 build/
-bin/ccweave
-bin/cctangle
+bin/
 bootstrap/ccweave
 work/
 stack.yaml

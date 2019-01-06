@@ -11,6 +11,7 @@ define STACK_PREAMBLE
   script
   --resolver lts-12.22
   --package containers
+  --package hostname
   --package mtl
   --package filepath
   --package directory

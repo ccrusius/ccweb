@@ -51,10 +51,11 @@ import Control.Monad (void, when)
 import Control.Monad.State (State, get, modify, runState)
 import Data.Foldable (foldlM, foldrM)
 import Data.Char (isPrint, isSpace, ord)
-import Data.List (intercalate, isPrefixOf)
+import Data.List (intercalate, isPrefixOf, isSuffixOf)
 import Data.Maybe (fromJust, isJust, mapMaybe)
 import qualified Data.Map as Map
 import GHC.Exts (IsList(..), groupWith, sortWith)
+import Network.HostName (getHostName)
 #+END_SRC
 
 #+NAME: Language-features
@@ -69,6 +70,7 @@ import GHC.Exts (IsList(..), groupWith, sortWith)
 #+NAME: stack-packages
 #+BEGIN_SRC shell
 --package containers
+--package hostname
 --package mtl
 #+END_SRC
 
@@ -300,13 +302,18 @@ instance Tangle CodeLine where
         revacc acc element = do
           let (pre, (Raw l:ls)) = break isRaw acc
           modify (\s -> s{ indent = replicate (length l) ' ' })
-          (pre', (Raw l':ls')) <- break isRaw <$> tangle element
-          return $
-            reverse ls'
-            ++ [Raw(l ++ l')]
-            ++ reverse pre'
-            ++ pre
-            ++ ls
+          (break isRaw <$> tangle element) >>= \case
+            (pre', (Raw l':ls')) -> return
+                                  $ reverse ls'
+                                  ++ [Raw(l ++ l')]
+                                  ++ reverse pre'
+                                  ++ pre
+                                  ++ ls
+            (pre', []) -> return
+                         $ reverse pre'
+                         ++ pre
+                         ++ ls
+            _ -> error $ "unreachable case"
 #+END_SRC
 
 Tangling of code parts is the last piece of the puzzle. Literals are
@@ -433,10 +440,11 @@ main = do
   ingested <- fromList <$> ingest (inputFile opts) :: IO OrgFile
   logM (logLevel opts) Debug $ PP.render (pretty ingested)
 
+  hname <- getHostName
   let org = fromEither
             $ P.runParser
             (parse :: Parser Document)
-            initialOrgState
+            initialParserState{ hostName = hname }
             (inputFile opts)
             ingested
   logM (logLevel opts) Debug $ PP.render (pretty org)
@@ -690,7 +698,7 @@ import qualified Text.Parsec.Pos as P
 
 #+NAME: Parser
 #+BEGIN_SRC haskell
-type Parser = P.Parsec OrgFile OrgState
+type Parser = P.Parsec OrgFile ParserState
 
 class Parse a where
   parse :: Parser a
@@ -698,15 +706,17 @@ class Parse a where
 
 #+NAME: Parser
 #+BEGIN_SRC haskell
-data OrgState = OrgState
+data ParserState = ParserState
   { sectionNumber :: Int
   , propertyStack :: Stack Properties
+  , hostName      :: String
   }
 
-initialOrgState :: OrgState
-initialOrgState = OrgState
+initialParserState :: ParserState
+initialParserState = ParserState
   { sectionNumber = 0
   , propertyStack = Stack []
+  , hostName      = []
   }
 #+END_SRC
 
@@ -886,7 +896,7 @@ spaces1 = P.many1 space
 #+NAME: Parser
 #+BEGIN_SRC haskell
 symbolChar :: P.Stream s m Char => P.ParsecT s u m Char
-symbolChar = P.satisfy (\c -> isPrint c && not (isSpace c) && notElem c "()")
+symbolChar = P.satisfy (\c -> isPrint c && not (isSpace c) && notElem c "()=")
 
 symbol :: P.Stream s m Char => P.ParsecT s u m String
 symbol = P.many1 symbolChar
@@ -1004,7 +1014,7 @@ do
   let t = fromEither
         $ P.runParser
         (parse :: Parser Text)
-        initialOrgState
+        initialParserState
         (P.sourceName p)
         (fromList [l] :: OrgFile)
       r = SectionReference p t
@@ -1091,28 +1101,36 @@ Valid =system-type= values include =gnu/linux=, =darwin=, and =windows-nt=.
 #+NAME: Parser
 #+BEGIN_SRC haskell
 class Eval a where
-  eval :: a -> a
+  eval :: ParserState -> a -> a
 
 instance Eval SExpression where
-  eval (Series [Atom "eq", Atom "system-type", Atom ('\'':t)]) =
+  eval _ (Series [Atom "eq", Atom "system-type", Atom ('\'':t)]) =
     YesNo $ case (Sys.os, t) of
               ("linux", "gnu/linux") -> True
               ("mingw32", "windows-nt") -> True
               ("darwin", "darwin") -> True
               _ -> False
 
-  eval (Series [Atom "unless", expr, result]) =
-    case eval expr of
-      YesNo False -> eval result
+  eval s (Series [Atom "unless", expr, result]) =
+    case eval s expr of
+      YesNo False -> eval s result
       YesNo True  -> YesNo False
       expr' -> expr'
 
-  eval (Series [Atom "when", expr, result]) =
-    case eval expr of
-      YesNo True -> eval result
+  eval s (Series [Atom "when", expr, result]) =
+    case eval s expr of
+      YesNo True -> eval s result
       expr' -> expr'
 
-  eval x = x
+  eval s (Series [Atom "system-name"]) =
+    Atom $ hostName s 
+
+  eval s (Series [Atom "string-suffix-p", suffix, expr]) =
+    case (eval s suffix, eval s expr) of
+      (Atom s', Atom str) -> YesNo $ isSuffixOf s' str
+      (e1, e2) -> Series [Atom "string-suffix-p", e1, e2]
+
+  eval _ x = x
 #+END_SRC
 
 #+NAME: Imports
@@ -1126,8 +1144,8 @@ Org properties are key-value pairs assigned to a property name.
 
 #+NAME: Parser
 #+BEGIN_SRC haskell
-instance Eval Property where; eval = Map.map eval
-instance Eval Properties where; eval = Map.map eval
+instance Eval Property where; eval s = Map.map (eval s)
+instance Eval Properties where; eval s = Map.map (eval s)
 #+END_SRC
 
 #+NAME: Parser
@@ -1168,7 +1186,7 @@ line (Map.fromList
 #+NAME: Parse a single key-value property pair
 #+BEGIN_SRC haskell
 do
-  k <- symbol <* spaces1
+  k <- symbol <* (spaces1 <|> (spaces *> P.char '=' *> spaces))
   v <- parse :: Parser SExpression
   return (k, v)
 #+END_SRC
@@ -1268,11 +1286,12 @@ instance Parse SourceBlock where
     ls <- P.manyTill (P.string i *> parse :: Parser CodeLine)
          (P.try (line (P.string i *> P.string "#+END_SRC" *> spaces)))
     --parserTrace "SourceBlock: code block parsed"
+    state <- P.getState
     return $ SourceBlock
       { blockName = n
       , blockLanguage = l
       , blockProperties = ps
-      , blockDerivedProperties = eval ps'
+      , blockDerivedProperties = eval state ps'
       , blockLocation = p
       , blockLines = ls
       }
@@ -1293,7 +1312,8 @@ blockFile b =
   case headerArg ":tangle" b of
     Nothing -> Nothing
     Just (Atom f) -> Just f
-    _ -> Nothing
+    Just (YesNo _) -> Nothing
+    Just e -> error $ "unsupported tangle destination: " ++ show e
 #+END_SRC
 
 ** Utility parsers
@@ -1375,10 +1395,11 @@ instance Parse Section where
     --parserTrace "Section: about to scan for text and code"
     (ts, c) <- scan
     --parserTrace "Section: section parsed"
+    state <- P.getState
     return Section
       { sectionHeadline = h
       , sectionProps = ps
-      , sectionDerivedProperties = eval ps'
+      , sectionDerivedProperties = eval state ps'
       , sectionDocumentation = ts
       , sectionSourceBlock = c
       }
@@ -1691,7 +1712,7 @@ cabal-version: >=1.10
 executable cctangle
   main-is: bin/cctangle.hs
   build-depends:
-                base, containers, directory, filepath, mtl,
+                base, containers, directory, filepath, hostname, mtl,
                 optparse-applicative, parsec, pretty, unix
   default-language: Haskell2010
   ghc-options: -Wall -Werror -O2 -rtsopts
@@ -1701,7 +1722,7 @@ executable cctangle
 executable ccweave
   main-is: bin/ccweave.hs
   build-depends:
-                base, containers, directory, filepath, mtl,
+                base, containers, directory, filepath, hostname, mtl,
                 optparse-applicative, parsec, pretty, unix
   default-language: Haskell2010
   ghc-options: -Wall -O2 -rtsopts
