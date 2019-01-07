@@ -1205,6 +1205,20 @@ instance Parse Document where
       }
 #+END_SRC
 
+#+NAME: Parser
+#+BEGIN_SRC haskell
+readOrgFile :: FilePath -> IO (OrgFile, Document)
+readOrgFile fp = do
+  ingested <- fromList <$> ingest fp :: IO OrgFile
+  h <- getHostName
+  let doc = fromEither $ P.runParser
+        (parse :: Parser Document)
+        initialParserState{ hostName = h }
+        fp
+        ingested
+  return (ingested, doc)
+#+END_SRC
+
 * Weaving
 
 #+BEGIN_SRC haskell :tangle "bin/ccweave.hs" :tangle-mode (identity #o444)

@@ -29,8 +29,7 @@ import Data.Maybe (fromJust, isJust, mapMaybe)
 import qualified Data.Map as Map
 import GHC.Exts (IsList(..), groupWith, sortWith)
 import Network.HostName (getHostName)
-{-# LINE 201 "org/tangle.org" #-}
-import Numeric (showOct)
+{-# LINE 282 "org/tangle.org" #-}
 import qualified System.Directory as D
 import qualified System.Environment as Env
 import qualified System.FilePath as F
@@ -807,6 +806,17 @@ instance Parse Document where
       { orgKeywords = hs
       , orgSections = ss
       }
+{-# LINE 1210 "ccweb.org" #-}
+readOrgFile :: FilePath -> IO (OrgFile, Document)
+readOrgFile fp = do
+  ingested <- fromList <$> ingest fp :: IO OrgFile
+  h <- getHostName
+  let doc = fromEither $ P.runParser
+        (parse :: Parser Document)
+        initialParserState{ hostName = h }
+        fp
+        ingested
+  return (ingested, doc)
 {-# LINE 303 "ccweb.org" #-}
 data Options = Options
   { logLevel :: LogLevel
@@ -889,48 +899,114 @@ dryRunParser = O.switch
   <> O.help "If given, do not write any files. Useful when debugging."
   )
 {-# LINE 10 "org/tangle.org" #-}
-type Indent = String
+main :: IO ()
+main = do
+  opts <- O.execParser optParser
+  logM (logLevel opts) Info $ "This is CCWEB"
+
 {-# LINE 15 "org/tangle.org" #-}
+  (ingested, doc) <- readOrgFile (inputFile opts)
+  logM (logLevel opts) Debug $ PP.render (pretty ingested)
+  logM (logLevel opts) Debug $ PP.render (pretty doc)
+
+{-# LINE 19 "org/tangle.org" #-}
+  home <- Env.getEnv "HOME"
+  let outs = 
+{-# LINE 52 "org/tangle.org" #-}
+             (map (\bs -> (fst (head bs), map snd bs))
+                  :: [[(FilePath, SourceBlock)]] -> [(FilePath,[SourceBlock])])
+             
+{-# LINE 55 "org/tangle.org" #-}
+               . (groupWith fst
+                  :: [(FilePath, SourceBlock)] -> [[(FilePath, SourceBlock)]])
+             
+{-# LINE 58 "org/tangle.org" #-}
+               . (sortWith fst
+                  :: [(FilePath, SourceBlock)] -> [(FilePath, SourceBlock)])
+             
+{-# LINE 61 "org/tangle.org" #-}
+               . (map (\(fp,b) -> (case fp of { ('~':xs) -> home ++ xs; _ -> fp }, b))
+                  :: [(FilePath, SourceBlock)] -> [(FilePath, SourceBlock)])
+             
+{-# LINE 64 "org/tangle.org" #-}
+               . (mapMaybe (\b -> (flip (,) b) <$> blockFile b)
+                  :: [SourceBlock] -> [(FilePath,SourceBlock)])
+             
+{-# LINE 67 "org/tangle.org" #-}
+               . (mapMaybe sectionSourceBlock
+                  :: [Section] -> [SourceBlock])
+             
+{-# LINE 70 "org/tangle.org" #-}
+               $ orgSections doc
+{-# LINE 20 "org/tangle.org" #-}
+                                                       :: [(FilePath, [SourceBlock])]
+{-# LINE 37 "org/tangle.org" #-}
+  when (listOutputFiles opts) $ mapM_ putStrLn (map fst outs)
+  when (listInputFiles opts)  $ mapM_ putStrLn (
+    nub . sort .
+    map (\(OrgLine p _) -> P.sourceName p) $ (toList ingested)
+    )
+{-# LINE 21 "org/tangle.org" #-}
+
+{-# LINE 23 "org/tangle.org" #-}
+  mapM_ (tangleFile opts doc) outs
+  where
+    optParser = O.info (tanglerOptionParser <**> O.helper)
+      ( O.fullDesc
+      <> O.progDesc "Tangle the input FILE"
+      <> O.header "cctangle - A literate programming tangler" )
+{-# LINE 77 "org/tangle.org" #-}
+type Indent = String
+{-# LINE 82 "org/tangle.org" #-}
 data Line = LinePragma String P.SourcePos | Raw String
 
-{-# LINE 17 "org/tangle.org" #-}
+{-# LINE 84 "org/tangle.org" #-}
 instance Show Line where
   show (Raw str) = str ++ "\n"
   show (LinePragma lang pos) = case linePragma lang pos of
                                [] -> ""
                                s -> s ++ "\n"
 
-{-# LINE 23 "org/tangle.org" #-}
+{-# LINE 90 "org/tangle.org" #-}
 unindent :: Indent -> Line -> Line
 unindent i (Raw s)
   | isPrefixOf i s = Raw $ drop (length i) s
   | otherwise = Raw s
 unindent _ l = l
-{-# LINE 32 "org/tangle.org" #-}
+{-# LINE 99 "org/tangle.org" #-}
 data TangleState = TangleState
   { document :: Document
   , indent :: String
   , blocks :: Stack SourceBlock
   }
-{-# LINE 41 "org/tangle.org" #-}
+{-# LINE 108 "org/tangle.org" #-}
 type Tangler a = State TangleState a
-{-# LINE 46 "org/tangle.org" #-}
+{-# LINE 113 "org/tangle.org" #-}
 getIndent :: Tangler String
 getIndent = indent <$> get
 
-{-# LINE 49 "org/tangle.org" #-}
+{-# LINE 116 "org/tangle.org" #-}
 setIndentFrom :: String -> Tangler ()
 setIndentFrom str = modify
   (\s -> s{ indent = replicate (length str) ' ' })
 
-{-# LINE 53 "org/tangle.org" #-}
+{-# LINE 120 "org/tangle.org" #-}
 addIndentFrom :: String -> Tangler ()
 addIndentFrom str = modify
   (\s -> s{ indent = indent s ++ replicate (length str) ' ' })
-{-# LINE 61 "org/tangle.org" #-}
+{-# LINE 128 "org/tangle.org" #-}
 class Tangle a where
   tangle :: a -> Tangler [Line]
-{-# LINE 72 "org/tangle.org" #-}
+{-# LINE 134 "org/tangle.org" #-}
+linePragma :: String -> P.SourcePos -> String
+linePragma "haskell" pos =
+  unwords ["{-# LINE", show (P.sourceLine pos), "\"" ++ P.sourceName pos ++ "\"", "#-}" ]
+linePragma "c" pos =
+  unwords ["#line", show (P.sourceLine pos), "\"" ++ P.sourceName pos ++ "\"" ]
+linePragma "c++" pos =
+  linePragma "c" pos
+linePragma _ _ = []
+{-# LINE 153 "org/tangle.org" #-}
 instance Tangle SourceBlock where
   tangle block = do
     modify (\s -> s{ blocks = push block (blocks s) })
@@ -940,7 +1016,7 @@ instance Tangle SourceBlock where
     case headerArg ":comments" block of
       Just (YesNo True) -> return (pragma : ls)
       _ -> return ls
-{-# LINE 104 "org/tangle.org" #-}
+{-# LINE 185 "org/tangle.org" #-}
 instance Tangle CodeLine where
   tangle (CodeLine _ []) = do
     ind <- indent <$> get
@@ -965,29 +1041,29 @@ instance Tangle CodeLine where
           | otherwise = a
         removeLeadingEmptyLine a = a
 
-{-# LINE 128 "org/tangle.org" #-}
+{-# LINE 209 "org/tangle.org" #-}
         breakRaw :: [Line] -> ([Line],[Line])
         breakRaw = break (\case { (Raw _) -> True; _ -> False })
 
-{-# LINE 131 "org/tangle.org" #-}
+{-# LINE 212 "org/tangle.org" #-}
         revacc :: [Line] -> CodeElement -> Tangler [Line]
         revacc acc element = do
           let (xxxpost, xxxpre) = breakRaw acc
           case (xxxpost, xxxpre, element) of
-{-# LINE 141 "org/tangle.org" #-}
+{-# LINE 222 "org/tangle.org" #-}
             ([], (Raw l:ls), Literal _ s) -> do
               addIndentFrom s
               return $ Raw (l ++ s) : ls
-{-# LINE 151 "org/tangle.org" #-}
+{-# LINE 232 "org/tangle.org" #-}
             (_, _, Literal pos s) -> do
               i <- getIndent
               b <- top . blocks <$> get
               addIndentFrom s
               return $ LinePragma (blockLanguage b) pos : Raw (i ++ s) : acc
-{-# LINE 160 "org/tangle.org" #-}
+{-# LINE 241 "org/tangle.org" #-}
             (post, (Raw l:ls), SectionReference pos name) -> do
               bs <- 
-{-# LINE 190 "org/tangle.org" #-}
+{-# LINE 271 "org/tangle.org" #-}
                     filter (\b -> case (blockName b) of
                                    Nothing -> False
                                    Just t -> t == name)
@@ -995,7 +1071,7 @@ instance Tangle CodeLine where
                       . orgSections
                       . document
                       <$> get
-{-# LINE 161 "org/tangle.org" #-}
+{-# LINE 242 "org/tangle.org" #-}
                                                         :: Tangler [SourceBlock]
               when (null bs) (error $ "source block not defined anywhere: " ++ show name)
               tangledLines <- concat <$> mapM tangle bs :: Tangler [Line]
@@ -1013,18 +1089,18 @@ instance Tangle CodeLine where
               case headerArg ":comments" block of
                 Just (YesNo True) -> return $ LinePragma (blockLanguage block) pos : acc'
                 _ -> return acc'
-{-# LINE 136 "org/tangle.org" #-}
+{-# LINE 217 "org/tangle.org" #-}
             _ -> error $ "unreachable element tangling case"
-{-# LINE 218 "org/tangle.org" #-}
+{-# LINE 298 "org/tangle.org" #-}
 tangleFile :: Options -> Document -> (FilePath, [SourceBlock]) -> IO ()
 tangleFile opts _ (fp, []) =
-  logM (logLevel opts) Warning $ "* File " ++ fp ++ " seems to be empty."
+  logM (logLevel opts) Warning $ "Not writing empty output file (" ++ fp ++ ")"
 tangleFile opts doc (fp, bs) = do
   let ls = concatMap
            (\b -> fst $ runState (tangle b) TangleState{ document = doc, indent = [], blocks = Stack [] })
            bs
       ls' = 
-{-# LINE 260 "org/tangle.org" #-}
+{-# LINE 332 "org/tangle.org" #-}
             foldr (\x xs -> let a = (x:xs) in case a of
                       (LinePragma _ _ : LinePragma _ _ : _) -> xs
                       (LinePragma _ p1 : h : LinePragma _ p2 : xs') ->
@@ -1034,99 +1110,29 @@ tangleFile opts doc (fp, bs) = do
                       _ -> a)
                   []
                   ls
-{-# LINE 226 "org/tangle.org" #-}
+{-# LINE 306 "org/tangle.org" #-}
       contents = concatMap show ls'
       block = head bs
-  logM (logLevel opts) Info $ "* Writing file " ++ fp ++ "..."
+  logM (logLevel opts) Info $ "Writing the output file (" ++ fp ++ ")"
   if dryRun opts
-    then ( logM (logLevel opts) Info "** Dry-run: writing to stdout"
-           >> logM (logLevel opts) Info contents
-         )
+    then logM (logLevel opts) Info contents
     else do
       let dir = F.takeDirectory fp
-      when (mkDir && dir /= ".") $ do
-        logM (logLevel opts) Info $ "** Creating missing directories..."
-        D.createDirectoryIfMissing True dir
+      when (mkDir && dir /= ".") $ D.createDirectoryIfMissing True dir
+
+{-# LINE 315 "org/tangle.org" #-}
       exists <- F.fileExist fp
-      when exists $ do
-        logM (logLevel opts) Info $ "** Removing pre-existing file..."
-        F.removeLink fp
-      logM (logLevel opts) Info $
-        "** Writing file contents..."
+      when exists $ F.removeLink fp
+
+{-# LINE 318 "org/tangle.org" #-}
       writeFile fp contents
       case headerArg ":tangle-mode" block of
         Nothing -> return ()
         Just expr -> do
           let mode = fileMode expr
-          logM (logLevel opts) Info $
-            "** Setting file mode to #o" ++ showOct mode "..."
           F.setFileMode fp mode
   where
     mkDir = case headerArg ":mkdirp" (head bs) of
               Just (YesNo x) -> x
               _ -> False
-{-# LINE 273 "org/tangle.org" #-}
-main :: IO ()
-main = do
-  opts <- O.execParser optParser
-  logM (logLevel opts) Debug "* Command line options:"
-  logM (logLevel opts) Debug $ PP.render (pretty opts)
-
-{-# LINE 279 "org/tangle.org" #-}
-  ingested <- fromList <$> ingest (inputFile opts) :: IO OrgFile
-  logM (logLevel opts) Debug $ PP.render (pretty ingested)
-
-{-# LINE 282 "org/tangle.org" #-}
-  hname <- getHostName
-  let org = fromEither
-            $ P.runParser
-            (parse :: Parser Document)
-            initialParserState{ hostName = hname }
-            (inputFile opts)
-            ingested
-  logM (logLevel opts) Debug $ PP.render (pretty org)
-
-{-# LINE 291 "org/tangle.org" #-}
-  home <- Env.getEnv "HOME"
-  let fs = 
-{-# LINE 306 "org/tangle.org" #-}
-           map (\bs -> (fst (head bs), map snd bs))
-             . groupWith fst
-             . sortWith fst
-             . map (\(fp,b) -> case fp of
-                       ('~':xs) -> (home ++ xs, b)
-                       _ -> (fp, b))
-             . mapMaybe (\b -> (\fp -> (fp, b)) <$> blockFile b)
-             . mapMaybe sectionSourceBlock
-             $ orgSections org
-{-# LINE 292 "org/tangle.org" #-}
-                                                    :: [(FilePath, [SourceBlock])]
-  when (listInputFiles opts) $ 
-{-# LINE 319 "org/tangle.org" #-}
-                               mapM_ putStrLn (
-                                 nub . sort .
-                                 map (\(OrgLine p _) -> P.sourceName p) $ (toList ingested)
-                               )
-{-# LINE 294 "org/tangle.org" #-}
-  when (listOutputFiles opts) $ 
-{-# LINE 327 "org/tangle.org" #-}
-                                mapM_ putStrLn (map fst fs)
-{-# LINE 294 "org/tangle.org" #-}
-
-{-# LINE 296 "org/tangle.org" #-}
-  mapM_ (tangleFile opts org) fs
-  where
-    optParser = O.info (tanglerOptionParser <**> O.helper)
-      ( O.fullDesc
-      <> O.progDesc "Tangle the input FILE"
-      <> O.header "cctangle - A literate programming tangler" )
-{-# LINE 334 "org/tangle.org" #-}
-linePragma :: String -> P.SourcePos -> String
-linePragma "haskell" pos =
-  unwords ["{-# LINE", show (P.sourceLine pos), "\"" ++ P.sourceName pos ++ "\"", "#-}" ]
-linePragma "c" pos =
-  unwords ["#line", show (P.sourceLine pos), "\"" ++ P.sourceName pos ++ "\"" ]
-linePragma "c++" pos =
-  linePragma "c" pos
-linePragma _ _ = []
 {-# LINE 5 "org/tangle.org" #-}
