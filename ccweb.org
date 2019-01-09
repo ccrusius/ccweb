@@ -317,8 +317,8 @@ instance Pretty Options where
     , ("input file", pretty $ inputFile o)
     ]
 
-tanglerOptionParser :: O.Parser Options
-tanglerOptionParser = Options
+userOptionParser :: O.Parser Options
+userOptionParser = Options
   <$> <<Parse log level command line flags>>
   <*> dryRunParser
   <*> <<The =-I= command line flag>>

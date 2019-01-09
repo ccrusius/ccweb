@@ -22,23 +22,10 @@ main = do
 
   mapM_ (tangleFile opts doc) outs
   where
-    optParser = O.info (tanglerOptionParser <**> O.helper)
+    optParser = O.info (userOptionParser <**> O.helper)
       ( O.fullDesc
       <> O.progDesc "Tangle the input FILE"
       <> O.header "cctangle - A literate programming tangler" )
-#+END_SRC
-
-As seen from the type of ~outs~, the output files are the first
-elements in its tuples. The output files are all listed in the
-lines of the ~ingested~ file.
-
-#+NAME: List input and output files
-#+BEGIN_SRC haskell
-when (listOutputFiles opts) $ mapM_ putStrLn (map fst outs)
-when (listInputFiles opts)  $ mapM_ putStrLn (
-  nub . sort .
-  map (\(OrgLine p _) -> P.sourceName p) $ (toList ingested)
-  )
 #+END_SRC
 
 Gathering and grouping the top level code blocks is a trivial but long
@@ -62,6 +49,19 @@ parameter is a file name. I then group those by file name into
   . (mapMaybe sectionSourceBlock
      :: [Section] -> [SourceBlock])
   $ orgSections doc
+#+END_SRC
+
+Once I have the input file ~ingested~ and parsed, I can print out all
+the input and output files. The former are listed in the ~ingested~
+lines, and the latter are the first element of the ~outs~ tuples.
+
+#+NAME: List input and output files
+#+BEGIN_SRC haskell
+when (listOutputFiles opts) $ mapM_ putStrLn (map fst outs)
+when (listInputFiles opts)  $ mapM_ putStrLn (
+  nub . sort .
+  map (\(OrgLine p _) -> P.sourceName p) $ (toList ingested)
+  )
 #+END_SRC
 
 The file will be tangled by producing a sequence of code lines, which
@@ -144,7 +144,7 @@ active set of Org properties.
 #+BEGIN_SRC haskell
 data TangleState = TangleState
   { document :: Document
-  , indent :: String
+  , indent :: Indent
   , blocks :: Stack SourceBlock
   }
 #+END_SRC
@@ -177,9 +177,16 @@ instance Tangle SourceBlock where
     modify (\s -> s{ blocks = push block (blocks s) })
     ls <- concat <$> mapM tangle (blockLines block)
     modify (\s -> s{ blocks = pop (blocks s) })
-    return $ case headerArg ":comments" block of
-      Just (YesNo True) -> LinePragma (blockLanguage block) (blockLocation block) : ls
-      _ -> ls
+    return $ maybeAddLinePragma block (blockLocation block) ls
+#+END_SRC
+
+#+NAME: Tangler
+#+BEGIN_SRC haskell
+maybeAddLinePragma :: SourceBlock -> P.SourcePos -> [Line] -> [Line]
+maybeAddLinePragma block pos ls =
+  case headerArg ":comments" block of
+    Just (YesNo True) -> LinePragma (blockLanguage block) pos : ls
+    _ -> ls
 #+END_SRC
 
 Tangling code lines is a lot more complicated. The simple case is
@@ -195,31 +202,123 @@ instance Tangle CodeLine where
     <<Tangle code line with ~elements~>>
 #+END_SRC
 
-Tangling a code line is a matter of tangling all of its elements and
-stitching them together. This is complicated by two things:
+Tangling a non-empty code line is a matter of tangling all of its
+elements and stitching them together. This is complicated by two
+things:
 
 - A single element can result in multiple lines if it is a reference
   expansion. It is not uncommon for a "code line" to expand into a
   large part of the entire program.
+
 - Those multiple lines have to be properly indented, which means I have to keep
   track of indentation as I go.
 
-The mechanism used to handle those is a left fold that keeps track of
-the current list of tangled lines. A new element is tangled and appended
-to this list, and the indentation for the next element is given by
-last line's length.
-
-
-** Tangled Lines
+This is what I am going to do: I am going to tangle one element at a
+time, and accumulate all that was tangled so far (in reverse order) in
+a list of lines. It will be useful to be able to separate them into a
+tail of pragma lines and and the remainder code text and pragma mix.
 
 #+NAME: Tangler
 #+BEGIN_SRC haskell
-unindent :: Indent -> Line -> Line
-unindent i (CodeText s)
-  | isPrefixOf i s = CodeText $ drop (length i) s
-  | otherwise = CodeText s
-unindent _ l = l
+breakCodeText :: [Line] -> ([Line],[Line])
+breakCodeText = break (\case { (CodeText _) -> True; _ -> False })
 #+END_SRC
+
+Since the accumulated line list will be in reverse order, the very
+first line of ~snd . breakCodeText~ will contain the last tangled code
+text line.
+
+#+NAME: Tangle the next element and update the accumulated tangled lines
+#+BEGIN_SRC haskell
+\acc element -> do
+  let (accPragmas, accRest) = breakCodeText acc
+  case (accPragmas, accRest, element) of
+    <<Tangle an ~(accPragmas, accRest, element)~ tuple>>
+    _ -> error $ "unreachable element tangling case"
+#+END_SRC
+
+The first case is the simplest: when there are no pragmas, and a
+literal is to be tangled, all I do is append that literal to the last
+tangled line, and update the current indentation.
+
+#+NAME: Tangle an ~(accPragmas, accRest, element)~ tuple
+#+BEGIN_SRC haskell
+([], (CodeText l:ls), Literal _ s) -> do
+  addIndentFrom s
+  return $ CodeText (l ++ s) : ls
+#+END_SRC
+
+The second case is of a literal with a line pragma following it. In
+that case, I have to add the literal with the right indentation, and
+add yet another line pragma to properly re-position the code. Again, I
+update the current indentation.
+
+#+NAME: Tangle an ~(accPragmas, accRest, element)~ tuple
+#+BEGIN_SRC haskell
+(_, _, Literal pos s) -> do
+  i <- getIndent
+  b <- top . blocks <$> get
+  addIndentFrom s
+  return $ maybeAddLinePragma b pos (CodeText (i ++ s) : acc)
+#+END_SRC
+
+Now for the last and rather involved case: tangling a section
+reference. I first tangle the section reference, getting back a list
+of lines. I then update the line accumulator, which is the involved
+part. The basic logic is as follows:
+
+- If there are no pragmas, then the first reference line has to be
+  appended to the last accumulated line, but it needs to be unindented
+  first, because it will be regularly indented.
+- If there are pragmas, the reference lines and their pragmas have to
+  be added, in reverse, to the accumulator.
+
+#+NAME: Tangle an ~(accPragmas, accRest, element)~ tuple
+#+BEGIN_SRC haskell
+(_, (CodeText l:ls), SectionReference pos name) -> do
+  refLines <- <<Get the tangled lines for a section reference named ~name~>>
+  let (refPragmas, (CodeText first : rest)) = breakCodeText refLines
+  acc' <- case (refPragmas, accPragmas) of
+    ([], []) -> do
+      unindented <- <<Remove current indent from string>> first
+      addIndentFrom unindented
+      return $ reverse rest ++ (CodeText(l ++ unindented) : ls)
+    _ -> do
+      setIndentFrom first
+      return $ reverse refLines ++ acc
+  block <- top . blocks <$> get
+  return $ maybeAddLinePragma block pos acc'
+#+END_SRC
+
+#+NAME: Get the tangled lines for a section reference named ~name~
+#+BEGIN_SRC haskell
+do
+  bs <- <<Gather code blocks named ~name~>> :: Tangler [SourceBlock]
+  when (null bs) (error $ "source block not defined anywhere: " ++ show name)
+  concat <$> mapM tangle bs :: Tangler [Line]
+#+END_SRC
+
+#+NAME: Gather code blocks named ~name~
+#+BEGIN_SRC haskell
+filter (\b -> case (blockName b) of
+               Nothing -> False
+               Just t -> t == name)
+  . mapMaybe sectionSourceBlock
+  . orgSections
+  . document
+  <$> get
+#+END_SRC
+
+#+NAME: Remove current indent from string
+#+BEGIN_SRC haskell
+(\str -> do
+   i <- getIndent
+   return $ if isPrefixOf i str; then drop (length i) str; else str
+)
+#+END_SRC
+
+
+** Tangled Lines
 
 #+NAME: Tangler
 #+BEGIN_SRC haskell
@@ -247,93 +346,23 @@ expensive operation.
 #+BEGIN_SRC haskell
 do
   state <- get
-  let block = top (blocks state)
-      ind   = indent state
-      pos = case head elements of
+  let lineBlock = top (blocks state)
+      lineIndent   = indent state
+      linePos = case head elements of
               (Literal p _) -> p
               (SectionReference p _) -> p
-      pragma = LinePragma (blockLanguage block) pos
-  ls <- removeLeadingEmptyLine . reverse <$> foldlM revacc [CodeText ind] elements
-  modify (\s -> s{ indent = ind })
-  case headerArg ":comments" block of
-    Just (YesNo True) -> return $ pragma : ls
-    _ -> return ls
+  ls <- removeLeadingEmptyLine . reverse <$>
+       foldlM
+         (<<Tangle the next element and update the accumulated tangled lines>>)
+         [CodeText lineIndent] elements
+  modify (\s -> s{ indent = lineIndent })
+  return $ maybeAddLinePragma lineBlock linePos ls
   where
     removeLeadingEmptyLine :: [Line] -> [Line]
     removeLeadingEmptyLine a@(CodeText l:p@(LinePragma _ _):ls)
       | all isSpace l = p:ls
       | otherwise = a
     removeLeadingEmptyLine a = a
-
-    breakCodeText :: [Line] -> ([Line],[Line])
-    breakCodeText = break (\case { (CodeText _) -> True; _ -> False })
-
-    revacc :: [Line] -> CodeElement -> Tangler [Line]
-    revacc acc element = do
-      let (xxxpost, xxxpre) = breakCodeText acc
-      case (xxxpost, xxxpre, element) of
-        <<Tangle next code element>>
-        _ -> error $ "unreachable element tangling case"
-#+END_SRC
-
-#+NAME: Tangle next code element
-#+BEGIN_SRC haskell
-([], (CodeText l:ls), Literal _ s) -> do
-  addIndentFrom s
-  return $ CodeText (l ++ s) : ls
-#+END_SRC
-
-If the literal appears right after a line pragma, then I need to
-insert yet another line pragma to re-position the source code correctly.
-
-#+NAME: Tangle next code element
-#+BEGIN_SRC haskell
-(_, _, Literal pos s) -> do
-  i <- getIndent
-  b <- top . blocks <$> get
-  addIndentFrom s
-  return $ LinePragma (blockLanguage b) pos : CodeText (i ++ s) : acc
-#+END_SRC
-
-#+NAME: Tangle next code element
-#+BEGIN_SRC haskell
-(post, (CodeText l:ls), SectionReference pos name) -> do
-  bs <- <<Gather code blocks named ~name~>> :: Tangler [SourceBlock]
-  when (null bs) (error $ "source block not defined anywhere: " ++ show name)
-  tangledLines <- concat <$> mapM tangle bs :: Tangler [Line]
-  let (pre, (CodeText first : rest)) = breakCodeText tangledLines
-  acc' <- case (pre, post) of
-    ([], []) -> do
-      i <- getIndent
-      let (CodeText first') = unindent i (CodeText first)
-      addIndentFrom first'
-      return $ reverse rest ++ [CodeText(l ++ first')] ++ ls
-    _ -> do
-      setIndentFrom first
-      return $ reverse tangledLines ++ acc
-  block <- top . blocks <$> get
-  case headerArg ":comments" block of
-    Just (YesNo True) -> return $ LinePragma (blockLanguage block) pos : acc'
-    _ -> return acc'
-#+END_SRC
-
-Tangling of code parts is the last piece of the puzzle. Literals are
-easy, but code blocks need to have their first lines be /not/
-indented, so one can have proper "inline" code blocks, such as
-
-#+BEGIN_SRC c :tangle no
-int main(void) { <<do everything>>; return 0; }
-#+END_SRC
-
-#+NAME: Gather code blocks named ~name~
-#+BEGIN_SRC haskell
-filter (\b -> case (blockName b) of
-               Nothing -> False
-               Just t -> t == name)
-  . mapMaybe sectionSourceBlock
-  . orgSections
-  . document
-  <$> get
 #+END_SRC
 
 #+NAME: Imports
