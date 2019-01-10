@@ -64,6 +64,7 @@ import Network.HostName (getHostName)
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE TupleSections #-}
 {-# LANGUAGE TypeFamilies #-}
 #+END_SRC
 
@@ -795,17 +796,6 @@ instance Eval Properties where; eval s = Map.map (eval s)
 
 #+NAME: Parser
 #+BEGIN_SRC haskell
-class HeaderArgs a where
-  headerArgs :: a -> Property
-  headerArg :: String -> a -> Maybe SExpression
-  headerArg k a = Map.lookup k $ headerArgs a
-
-instance HeaderArgs Properties where
-  headerArgs = Map.findWithDefault Map.empty "header-args"
-#+END_SRC
-
-#+NAME: Parser
-#+BEGIN_SRC haskell
 instance Parse Properties where
   parse = (<<Parse a =#+PROPERTY= line>>)
               <|> (<<Parse a =:PROPERTIES:= drawer>>)
@@ -910,12 +900,6 @@ instance Pretty SourceBlock where
 
 #+NAME: Parser
 #+BEGIN_SRC haskell
-instance HeaderArgs SourceBlock where
-  headerArgs = blockDerivedProperties
-#+END_SRC
-
-#+NAME: Parser
-#+BEGIN_SRC haskell
 instance Parse SourceBlock where
   parse = do
     --parserTrace "SourceBlock: trying to find a code block here"
@@ -947,18 +931,6 @@ instance Parse SourceBlock where
 P.try (spaces *> P.string "#+NAME:")
 *> spaces
 *> parse :: Parser Text
-#+END_SRC
-
-#+NAME: Parser
-#+BEGIN_SRC haskell
-blockFile :: SourceBlock -> Maybe FilePath
-blockFile SourceBlock{ blockName = Just _ } = Nothing
-blockFile b =
-  case headerArg ":tangle" b of
-    Nothing -> Nothing
-    Just (Atom f) -> Just f
-    Just (YesNo _) -> Nothing
-    Just e -> error $ "unsupported tangle destination: " ++ show e
 #+END_SRC
 
 ** Utility parsers

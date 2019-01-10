@@ -60,6 +60,14 @@ data SourceBlock = SourceBlock
 
 #+NAME: Document data model
 #+BEGIN_SRC haskell
+data CodeElement = Literal P.SourcePos String
+                 | SectionReference P.SourcePos Text
+
+data CodeLine = CodeLine P.SourcePos [CodeElement]
+#+END_SRC
+
+#+NAME: Document data model
+#+BEGIN_SRC haskell
 type Property = Map.Map String SExpression
 type Properties = Map.Map String Property
 #+END_SRC
@@ -75,9 +83,46 @@ data SExpression =
 
 #+NAME: Document data model
 #+BEGIN_SRC haskell
-data CodeElement = Literal P.SourcePos String
-                 | SectionReference P.SourcePos Text
+class HeaderArgs a where
+  headerArgs :: a -> Property
+  headerArg :: String -> a -> Maybe SExpression
+  headerArg k a = Map.lookup k $ headerArgs a
 
-data CodeLine = CodeLine P.SourcePos [CodeElement]
+instance HeaderArgs Properties where
+  headerArgs = Map.findWithDefault Map.empty "header-args"
+
+instance HeaderArgs SourceBlock where
+  headerArgs = blockDerivedProperties
 #+END_SRC
 
+#+NAME: Document data model
+#+BEGIN_SRC haskell
+data SourceBlockId = FileBlock FilePath | NamedBlock Text deriving Eq
+
+instance Ord SourceBlockId where
+  (<=) (FileBlock p1) (FileBlock p2) = p1 <= p2
+  (<=) (NamedBlock p1) (NamedBlock p2) = p1 <= p2
+  (<=) (FileBlock _) (NamedBlock _) = False
+  (<=) _ _ = True
+
+sourceBlockId :: SourceBlock -> Maybe SourceBlockId
+sourceBlockId SourceBlock{ blockName = (Just name) } = Just $ NamedBlock name
+sourceBlockId block = case headerArg ":tangle" block of
+    Nothing -> Nothing
+    Just (Atom f) -> Just $ FileBlock f
+    Just (YesNo _) -> Nothing
+    Just e -> error $ "unsupported tangle destination: " ++ show e
+#+END_SRC
+
+#+NAME: Partition a document into source block-defining sections
+#+BEGIN_SRC haskell
+(map (\bs -> (fst (head bs), map snd bs))
+     :: [[(SourceBlockId, Section)]] -> [(SourceBlockId,[Section])])
+  . (groupWith fst
+     :: [(SourceBlockId, Section)] -> [[(SourceBlockId, Section)]])
+  . (sortWith fst
+     :: [(SourceBlockId, Section)] -> [(SourceBlockId, Section)])
+  . (mapMaybe (\s -> sectionSourceBlock s >>= sourceBlockId >>= Just . (,s))
+     :: [Section] -> [(SourceBlockId, Section)])
+  . orgSections
+#+END_SRC

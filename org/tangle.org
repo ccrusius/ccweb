@@ -29,26 +29,20 @@ main = do
 #+END_SRC
 
 Gathering and grouping the top level code blocks is a trivial but long
-sequence of filters and transformations on the document source blocks: I
-select the ones that are not named, and for which the =:tangle=
-parameter is a file name. I then group those by file name into
-=(FilePath,[SourceBlock])= pairs.
+sequence of filters and transformations on the document source
+blocks. Included here is the expansion of the user's home directory.
 
 #+NAME: Gather blocks to tangle to files
 #+BEGIN_SRC haskell
-(map (\bs -> (fst (head bs), map snd bs))
-     :: [[(FilePath, SourceBlock)]] -> [(FilePath,[SourceBlock])])
-  . (groupWith fst
-     :: [(FilePath, SourceBlock)] -> [[(FilePath, SourceBlock)]])
-  . (sortWith fst
-     :: [(FilePath, SourceBlock)] -> [(FilePath, SourceBlock)])
-  . (map (\(fp,b) -> (case fp of { ('~':xs) -> home ++ xs; _ -> fp }, b))
-     :: [(FilePath, SourceBlock)] -> [(FilePath, SourceBlock)])
-  . (mapMaybe (\b -> (flip (,) b) <$> blockFile b)
-     :: [SourceBlock] -> [(FilePath,SourceBlock)])
-  . (mapMaybe sectionSourceBlock
-     :: [Section] -> [SourceBlock])
-  $ orgSections doc
+(map (\(fp,b) -> (case fp of { ('~':xs) -> home ++ xs; _ -> fp }, b))
+     :: [(FilePath, [SourceBlock])] -> [(FilePath, [SourceBlock])])
+  . (map (\(f,ss) -> (f, map (fromJust . sectionSourceBlock) ss))
+     :: [(FilePath, [Section])] -> [(FilePath, [SourceBlock])])
+  . (mapMaybe (\(i,ss) -> case i of; (FileBlock f) -> Just (f,ss); _ -> Nothing)
+     :: [(SourceBlockId, [Section])] -> [(FilePath, [Section])])
+  . (<<Partition a document into source block-defining sections>>
+     :: Document -> [(SourceBlockId, [Section])])
+  $ doc
 #+END_SRC
 
 Once I have the input file ~ingested~ and parsed, I can print out all
