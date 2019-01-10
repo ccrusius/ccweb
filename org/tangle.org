@@ -19,6 +19,7 @@ main = do
   home <- Env.getEnv "HOME"
   let outs = <<Gather blocks to tangle to files>> :: [(FilePath, [SourceBlock])]
   <<List input and output files>>
+  logM (logLevel opts) Debug $ PP.render (pretty outs)
 
   mapM_ (tangleFile opts doc) outs
   where
