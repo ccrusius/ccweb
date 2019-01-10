@@ -105,90 +105,11 @@ resize i (Stack xs)
     l = length xs
 #+END_SRC
 
-* The Org Document Structure
-
-#+NAME: Document data model
-#+BEGIN_SRC haskell
-data Document = Document
-  { orgKeywords :: [Keyword]
-  , orgSections :: [Section]
-  }
-#+END_SRC
-
-#+NAME: Document data model
-#+BEGIN_SRC haskell
-data Keyword = AuthorKeyword Text
-             | PropertyKeyword Properties
-             | TitleKeyword Text
-             | OtherKeyword String
-#+END_SRC
-
-#+NAME: Document data model
-#+BEGIN_SRC haskell
-data Section = Section
-  { sectionHeadline :: Maybe Headline
-  , sectionProps :: Properties
-  , sectionDerivedProperties :: Properties
-  , sectionDocumentation :: [Text]
-  , sectionSourceBlock :: Maybe SourceBlock
-  }
-#+END_SRC
-
-#+NAME: Document data model
-#+BEGIN_SRC haskell
-data Headline = Headline Int Text
-#+END_SRC
-
-#+NAME: Document data model
-#+BEGIN_SRC haskell
-data Text = Text [TextElement] deriving (Eq, Ord, Show)
-
-data TextElement =
-  Bold String
-  | InlineCode String
-  | Italics String
-  | Plain String
-  | StrikeThrough String
-  | Verbatim String
-  deriving (Eq, Ord, Show)
-#+END_SRC
-
-#+NAME: Document data model
-#+BEGIN_SRC haskell
-data SourceBlock = SourceBlock
-  { blockName :: Maybe Text
-  , blockLanguage :: String
-  , blockProperties :: Property
-  , blockDerivedProperties :: Property
-  , blockLocation :: P.SourcePos
-  , blockLines :: [CodeLine]
-  }
-#+END_SRC
-
-#+NAME: Document data model
-#+BEGIN_SRC haskell
-type Property = Map.Map String SExpression
-type Properties = Map.Map String Property
-#+END_SRC
-
-#+NAME: Document data model
-#+BEGIN_SRC haskell
-data SExpression =
-  Atom String
-  | Series [SExpression]
-  | YesNo Bool
-  deriving (Eq, Ord)
-#+END_SRC
-
-#+NAME: Document data model
-#+BEGIN_SRC haskell
-data CodeElement = Literal P.SourcePos String
-                 | SectionReference P.SourcePos Text
-
-data CodeLine = CodeLine P.SourcePos [CodeElement]
-#+END_SRC
+#+INCLUDE: "org/doc.org"
 
 #+INCLUDE: "org/tangle.org"
+
+#+INCLUDE: "org/weave.org"
 
 * Pretty-Printing
 
@@ -286,7 +207,7 @@ logM' :: Pretty a => a -> IO ()
 logM' = putStrLn . PP.render . pretty
 #+END_SRC
 
-* Command-Line Options
+* User Options
 
 #+NAME: Imports
 #+BEGIN_SRC haskell
@@ -394,8 +315,7 @@ dryRunParser = O.switch
 
 * Parsing an Org File
 
-I parse Org files with =Parsec=. The reason I chose it over
-=Attoparsec= was to be able to have better error messages.
+I parse Org files with =Parsec=.
 
 #+NAME: Imports
 #+BEGIN_SRC haskell
@@ -449,6 +369,8 @@ initialParserState = ParserState
 #+BEGIN_SRC haskell
 class Location a where
   newPosition :: P.SourcePos -> Char -> a -> P.SourcePos
+  getPosition :: a -> P.SourcePos
+  getPosition = error $ "getPosition not implemented"
 #+END_SRC
 
 #+NAME: Parser
@@ -464,6 +386,7 @@ instance Location String where
 data OrgLine = OrgLine P.SourcePos String
 
 instance Location OrgLine where
+  getPosition (OrgLine p _) = p
   newPosition _ _ (OrgLine p _) = p
 #+END_SRC
 
@@ -530,10 +453,11 @@ instance Monad m => P.Stream OrgFile m Char where
 #+NAME: Parser
 #+BEGIN_SRC haskell
 instance Location OrgFile where
-  newPosition pos c (OrgFile (x:_)) =
-    newPosition pos c x
-  newPosition _ _ (OrgFile []) =
-    error $ "(internal): location of empty OrgFile"
+  getPosition (OrgFile (x:_)) = getPosition x
+  getPosition _ = error $ "(internal) getPosition of empty OrgFile"
+
+  newPosition pos c (OrgFile (x:_)) = newPosition pos c x
+  newPosition _ _ (OrgFile []) = error $ "(internal): location of empty OrgFile"
 #+END_SRC
 
 #+NAME: Parser
@@ -707,6 +631,15 @@ instance Parse Text where
 instance Pretty CodeElement where
   pretty (Literal p s) = PP.parens $ pretty p PP.<> PP.colon PP.<> pretty s
   pretty (SectionReference p t) = pretty p PP.<> PP.colon PP.<> PP.char '«' PP.<> pretty t PP.<> PP.char '»'
+#+END_SRC
+
+#+NAME: Parser
+#+BEGIN_SRC haskell
+instance Location CodeElement where
+  getPosition (Literal p _) = p
+  getPosition (SectionReference p _) = p
+
+  newPosition _ _ _ = error $ "(internal) newPosition of CodeElement"
 #+END_SRC
 
 #+NAME: Parser
@@ -1218,106 +1151,3 @@ readOrgFile fp = do
         ingested
   return (ingested, doc)
 #+END_SRC
-
-* Weaving
-
-#+BEGIN_SRC haskell :tangle "bin/ccweave.hs" :tangle-mode (identity #o444)
-<<Common-ccweb-code>>
-
-main :: IO ()
-main = do
-  opts <- O.execParser optParser
-  logM (logLevel opts) Debug "* Command line options:"
-  logM (logLevel opts) Debug (PP.render (pretty opts))
-  --let doc = parseDocument state (inputFile opts)
-  --logM (logLevel opts) Debug $ PP.render (pretty doc)
-  --putStrLn (weave doc)
-  where
-    optParser = O.info (tanglerOptionParser <**> O.helper)
-      ( O.fullDesc
-      <> O.progDesc "Weave the input FILE"
-      <> O.header "ccweave - A literate programming weaver" )
-
-<<Weaver>>
-#+END_SRC
-
-#+NAME: Weaver
-#+BEGIN_SRC haskell
---class Weave a where
---  weave :: a -> String
-#+END_SRC
-
-#+NAME: Weaver
-#+BEGIN_SRC haskell
---instance Weave Char where
---  weave '&' = "{\\AM}"
---  weave '\\' = "{\\BS}"
---  weave '{' = "{\\LB}"
---  weave '}' = "{\\RB}"
---  weave '~' = "{\\TL}"
---  weave '_' = "{\\UL}"
---  weave '^' = "{\\CF}"
---  weave '#' = "{\\#}"
---  weave '$' = "{\\$}"
---  weave '%' = "{\\%}"
---  weave c = [c]
-#+END_SRC
-
-#+NAME: Weaver
-#+BEGIN_SRC haskell
---instance Weave TextElement where
---  weave (Plain s) = s
---  weave (Bold s) = concat ["{\\bf ", s, "}"]
---  weave (Italics s) = concat ["{\\it ", s, "\\/}"]
---  weave (InlineCode s) = "\\hbox{\\tenex " ++ concatMap weave s ++ "}"
---  weave (Verbatim s) = "\\hbox{\\tenex " ++ concatMap weave s ++ "}"
-#+END_SRC
-
-#+NAME: Weaver
-#+BEGIN_SRC haskell
---instance Weave Text where
---  weave (Text ts) = concatMap weave ts
-#+END_SRC
-
-The =\fi= at the end is necessary to balance out conditionals opened
-by the =cwebmac= macros issued at every section.
-
-#+NAME: Weaver
-#+BEGIN_SRC haskell
---instance Weave Section where
---  weave s = unlines (header : text) ++ code ++ "\\fi\n"
---    where
---      text = map weave (sectionText s)
---      header = concat $
---        case groupHeader s of
---          Nothing -> [ "\\M{", show (sectionNumber s), "}"]
---          Just h ->
---            [ "\\N{", show (sectionDepth h), "}"
---            , "{", show (sectionNumber s), "}"
---            , weave (sectionHeaderTitle h), "."
---            ]
---      code = concat $
---        case sectionCode s of
---          Nothing -> []
---          Just _ -> [ "\\X", ":", "\\X", "${}", "\\equiv{}$\n" ]
-#+END_SRC
-
-#+NAME: Weaver
-#+BEGIN_SRC haskell
---instance Weave Document where
---  weave Document{documentHeaders = []} = ""
---  weave doc@Document{documentHeaders = _} =
---    unlines [ "\\input cwebmac"
---            , concatMap weave (documentSections doc)
---            , "\\inx"
---            , "\\fin"
---            , "\\con"
---            ]
-#+END_SRC
-
-** Cross-referencing code blocks
-
-Whenever I am printing a code block, I need to know which other blocks
-use it, and what other blocks have the same name.
-
-#+INCLUDE: "org/build.org"

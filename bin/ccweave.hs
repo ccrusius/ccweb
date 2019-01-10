@@ -1,17 +1,3 @@
-#!/usr/bin/env stack
-{- stack
-  script
-  --resolver lts-12.22
-  --package containers
-  --package hostname
-  --package mtl
-  --package filepath
-  --package directory
-  --package unix
-  --package pretty
-  --package optparse-applicative
-  --package parsec
--}
 {-# LINE 63 "ccweb.org" #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
@@ -910,234 +896,74 @@ dryRunParser = O.switch
   <> O.long "dry-run"
   <> O.help "If given, do not write any files. Useful when debugging."
   )
-{-# LINE 10 "org/tangle.org" #-}
+{-# LINE 4 "org/weave.org" #-}
+
+{-# LINE 6 "org/weave.org" #-}
 main :: IO ()
 main = do
   opts <- O.execParser optParser
-  logM (logLevel opts) Info $ "This is CCWEB"
-
-{-# LINE 15 "org/tangle.org" #-}
-  (ingested, doc) <- readOrgFile (inputFile opts)
-  logM (logLevel opts) Debug $ PP.render (pretty ingested)
-  logM (logLevel opts) Debug $ PP.render (pretty doc)
-
-{-# LINE 19 "org/tangle.org" #-}
-  home <- Env.getEnv "HOME"
-  let outs = 
-{-# LINE 39 "org/tangle.org" #-}
-             (map (\bs -> (fst (head bs), map snd bs))
-                  :: [[(FilePath, SourceBlock)]] -> [(FilePath,[SourceBlock])])
-               . (groupWith fst
-                  :: [(FilePath, SourceBlock)] -> [[(FilePath, SourceBlock)]])
-               . (sortWith fst
-                  :: [(FilePath, SourceBlock)] -> [(FilePath, SourceBlock)])
-               . (map (\(fp,b) -> (case fp of { ('~':xs) -> home ++ xs; _ -> fp }, b))
-                  :: [(FilePath, SourceBlock)] -> [(FilePath, SourceBlock)])
-               . (mapMaybe (\b -> (flip (,) b) <$> blockFile b)
-                  :: [SourceBlock] -> [(FilePath,SourceBlock)])
-               . (mapMaybe sectionSourceBlock
-                  :: [Section] -> [SourceBlock])
-               $ orgSections doc
-{-# LINE 20 "org/tangle.org" #-}
-                                                       :: [(FilePath, [SourceBlock])]
-{-# LINE 60 "org/tangle.org" #-}
-  when (listOutputFiles opts) $ mapM_ putStrLn (map fst outs)
-  when (listInputFiles opts)  $ mapM_ putStrLn (
-    nub . sort .
-    map (\(OrgLine p _) -> P.sourceName p) $ (toList ingested)
-    )
-{-# LINE 21 "org/tangle.org" #-}
-
-{-# LINE 23 "org/tangle.org" #-}
-  mapM_ (tangleFile opts doc) outs
+  logM (logLevel opts) Debug "* Command line options:"
+  logM (logLevel opts) Debug (PP.render (pretty opts))
+  --let doc = parseDocument state (inputFile opts)
+  --logM (logLevel opts) Debug $ PP.render (pretty doc)
+  --putStrLn (weave doc)
   where
     optParser = O.info (userOptionParser <**> O.helper)
       ( O.fullDesc
-      <> O.progDesc "Tangle the input FILE"
-      <> O.header "cctangle - A literate programming tangler" )
-{-# LINE 74 "org/tangle.org" #-}
-data Line = CodeText String | LinePragma String P.SourcePos
-{-# LINE 82 "org/tangle.org" #-}
-instance Show Line where
-  show (CodeText str) = str ++ "\n"
-{-# LINE 92 "org/tangle.org" #-}
-  show (LinePragma "haskell" pos) = unwords
-    [ "{-# LINE", show (P.sourceLine pos)
-    , "\"" ++ P.sourceName pos ++ "\""
-    , "#-}\n" ]
-{-# LINE 102 "org/tangle.org" #-}
-  show (LinePragma "c" pos) = unwords
-    [ "#line", show (P.sourceLine pos)
-    , "\"" ++ P.sourceName pos ++ "\"\n"
-    ]
-  show (LinePragma "c++" pos) = show (LinePragma "c" pos)
-{-# LINE 85 "org/tangle.org" #-}
-  show (LinePragma _ _) = []
-{-# LINE 134 "org/tangle.org" #-}
-type Indent = String
-{-# LINE 145 "org/tangle.org" #-}
-data TangleState = TangleState
-  { document :: Document
-  , indent :: Indent
-  , blocks :: Stack SourceBlock
-  }
-{-# LINE 157 "org/tangle.org" #-}
-type Tangler a = State TangleState a
+      <> O.progDesc "Weave the input FILE"
+      <> O.header "ccweave - A literate programming weaver" )
 
-{-# LINE 159 "org/tangle.org" #-}
-getTopBlock :: Tangler SourceBlock
-getTopBlock = top . blocks <$> get
-
-{-# LINE 162 "org/tangle.org" #-}
-getIndent :: Tangler Indent
-getIndent = indent <$> get
-
-{-# LINE 165 "org/tangle.org" #-}
-setIndentFrom :: String -> Tangler ()
-setIndentFrom str = modify
-  (\s -> s{ indent = replicate (length str) ' ' })
-
-{-# LINE 169 "org/tangle.org" #-}
-addIndentFrom :: String -> Tangler ()
-addIndentFrom str = modify
-  (\s -> s{ indent = indent s ++ replicate (length str) ' ' })
-{-# LINE 180 "org/tangle.org" #-}
-tangleSourceBlock :: SourceBlock -> Tangler [Line]
-tangleSourceBlock block = do
-  modify (\s -> s{ blocks = push block (blocks s) })
-  ls <- concat <$> mapM tangleCodeLine (blockLines block)
-  modify (\s -> s{ blocks = pop (blocks s) })
-  return $ maybeAddLinePragma ls (blockLocation block) block
-{-# LINE 190 "org/tangle.org" #-}
-maybeAddLinePragma :: [Line] -> P.SourcePos -> SourceBlock -> [Line]
-maybeAddLinePragma ls pos block =
-  case headerArg ":comments" block of
-    Just (YesNo True) -> LinePragma (blockLanguage block) pos : ls
-    _ -> ls
-{-# LINE 203 "org/tangle.org" #-}
-tangleCodeLine :: CodeLine -> Tangler [Line]
-tangleCodeLine (CodeLine _ []) = (:[]) . CodeText <$> getIndent
-{-# LINE 232 "org/tangle.org" #-}
-tangleCodeLine (CodeLine _ elements) =
-  do
-    initialIndent <- getIndent
-    ls <- removeLeadingEmptyLine . 
-{-# LINE 225 "org/tangle.org" #-}
-                                   reverse <$> foldlM
-                                     (
-{-# LINE 261 "org/tangle.org" #-}
-                                      \acc element -> do
-                                        let (accPragmas, accRest) = breakCodeText acc
-                                        case (accPragmas, accRest, element) of
-{-# LINE 274 "org/tangle.org" #-}
-                                          ([], (CodeText l:ls), Literal _ s) -> do
-                                            addIndentFrom s
-                                            return $ CodeText (l ++ s) : ls
-{-# LINE 286 "org/tangle.org" #-}
-                                          (_, _, Literal pos s) -> do
-                                            i <- getIndent
-                                            addIndentFrom s
-                                            maybeAddLinePragma (CodeText (i ++ s) : acc) pos <$> getTopBlock
-{-# LINE 305 "org/tangle.org" #-}
-                                          (_, (CodeText l:ls), SectionReference pos name) -> do
-                                            refLines <- 
-{-# LINE 321 "org/tangle.org" #-}
-                                                        do
-                                                          bs <- 
-{-# LINE 329 "org/tangle.org" #-}
-                                                                filter (\b -> case (blockName b) of
-                                                                               Nothing -> False
-                                                                               Just t -> t == name)
-                                                                  . mapMaybe sectionSourceBlock
-                                                                  . orgSections
-                                                                  . document
-                                                                  <$> get
-{-# LINE 322 "org/tangle.org" #-}
-                                                                                                    :: Tangler [SourceBlock]
-                                                          when (null bs) (error $ "source block not defined anywhere: " ++ show name)
-                                                          concat <$> mapM tangleSourceBlock bs :: Tangler [Line]
-{-# LINE 307 "org/tangle.org" #-}
-                                            let (refPragmas, (CodeText first : rest)) = breakCodeText refLines
-                                            acc' <- case (refPragmas, accPragmas) of
-                                              ([], []) -> do
-                                                unindented <- 
-{-# LINE 340 "org/tangle.org" #-}
-                                                              (\str -> do
-                                                                 i <- getIndent
-                                                                 return $ if isPrefixOf i str; then drop (length i) str; else str
-                                                              )
-{-# LINE 310 "org/tangle.org" #-}
-                                                                          first
-                                                addIndentFrom unindented
-                                                return $ reverse rest ++ (CodeText(l ++ unindented) : ls)
-                                              _ -> do
-                                                setIndentFrom first
-                                                return $ reverse refLines ++ acc
-                                            maybeAddLinePragma acc' pos <$> getTopBlock
-{-# LINE 265 "org/tangle.org" #-}
-                                          _ -> error $ "unreachable element tangling case"
-{-# LINE 226 "org/tangle.org" #-}
-                                                        )
-                                     [CodeText initialIndent] elements
-{-# LINE 236 "org/tangle.org" #-}
-    modify (\s -> s{ indent = initialIndent })
-    maybeAddLinePragma ls (getPosition $ head elements) <$> getTopBlock
-      where
-        removeLeadingEmptyLine :: [Line] -> [Line]
-        removeLeadingEmptyLine a@(CodeText l:p@(LinePragma _ _):ls)
-          | all isSpace l = p:ls
-          | otherwise = a
-        removeLeadingEmptyLine a = a
-{-# LINE 251 "org/tangle.org" #-}
-breakCodeText :: [Line] -> ([Line],[Line])
-breakCodeText = break (\case { (CodeText _) -> True; _ -> False })
-{-# LINE 351 "org/tangle.org" #-}
-tangleFile :: Options -> Document -> (FilePath, [SourceBlock]) -> IO ()
-tangleFile opts _ (fp, []) =
-  logM (logLevel opts) Warning $ "Not writing empty output file (" ++ fp ++ ")"
-tangleFile opts doc (fp, bs) = do
-  let block = head bs
-      ls = concatMap
-           (\b -> fst $ runState (tangleSourceBlock b)
-                 TangleState{ document = doc
-                            , indent = []
-                            , blocks = Stack [] }
-           )
-           bs
-      contents = concatMap show $ 
-{-# LINE 116 "org/tangle.org" #-}
-                                  foldr (\x xs ->
-                                           let redundant (p1,n,p2) =
-                                                 P.sourceName p1 == P.sourceName p2
-                                                 && P.sourceLine p1 + n == P.sourceLine p2
-                                           in case (x:xs) of
-                                                (LinePragma _ _ : LinePragma _ _ : _) -> xs
-                                                (LinePragma _ p1 : l1 : LinePragma _ p2 : xs') ->
-                                                  if redundant (p1,1,p2); then x : l1 : xs'; else (x:xs)
-                                                _ -> (x:xs))
-                                        []
-{-# LINE 363 "org/tangle.org" #-}
-                                                  ls
-  logM (logLevel opts) Info $ "Writing the output file (" ++ fp ++ ")"
-  if dryRun opts
-    then logM (logLevel opts) Info contents
-    else do
-      let dir = F.takeDirectory fp
-      when (mkDir && dir /= ".") $ D.createDirectoryIfMissing True dir
-
-{-# LINE 371 "org/tangle.org" #-}
-      exists <- F.fileExist fp
-      when exists $ F.removeLink fp
-
-{-# LINE 374 "org/tangle.org" #-}
-      writeFile fp contents
-      case headerArg ":tangle-mode" block of
-        Nothing -> return ()
-        Just expr -> do
-          let mode = fileMode expr
-          F.setFileMode fp mode
-  where
-    mkDir = case headerArg ":mkdirp" (head bs) of
-              Just (YesNo x) -> x
-              _ -> False
-{-# LINE 5 "org/tangle.org" #-}
+{-# LINE 25 "org/weave.org" #-}
+--class Weave a where
+--  weave :: a -> String
+{-# LINE 31 "org/weave.org" #-}
+--instance Weave Char where
+--  weave '&' = "{\\AM}"
+--  weave '\\' = "{\\BS}"
+--  weave '{' = "{\\LB}"
+--  weave '}' = "{\\RB}"
+--  weave '~' = "{\\TL}"
+--  weave '_' = "{\\UL}"
+--  weave '^' = "{\\CF}"
+--  weave '#' = "{\\#}"
+--  weave '$' = "{\\$}"
+--  weave '%' = "{\\%}"
+--  weave c = [c]
+{-# LINE 47 "org/weave.org" #-}
+--instance Weave TextElement where
+--  weave (Plain s) = s
+--  weave (Bold s) = concat ["{\\bf ", s, "}"]
+--  weave (Italics s) = concat ["{\\it ", s, "\\/}"]
+--  weave (InlineCode s) = "\\hbox{\\tenex " ++ concatMap weave s ++ "}"
+--  weave (Verbatim s) = "\\hbox{\\tenex " ++ concatMap weave s ++ "}"
+{-# LINE 57 "org/weave.org" #-}
+--instance Weave Text where
+--  weave (Text ts) = concatMap weave ts
+{-# LINE 66 "org/weave.org" #-}
+--instance Weave Section where
+--  weave s = unlines (header : text) ++ code ++ "\\fi\n"
+--    where
+--      text = map weave (sectionText s)
+--      header = concat $
+--        case groupHeader s of
+--          Nothing -> [ "\\M{", show (sectionNumber s), "}"]
+--          Just h ->
+--            [ "\\N{", show (sectionDepth h), "}"
+--            , "{", show (sectionNumber s), "}"
+--            , weave (sectionHeaderTitle h), "."
+--            ]
+--      code = concat $
+--        case sectionCode s of
+--          Nothing -> []
+--          Just _ -> [ "\\X", ":", "\\X", "${}", "\\equiv{}$\n" ]
+{-# LINE 86 "org/weave.org" #-}
+--instance Weave Document where
+--  weave Document{documentHeaders = []} = ""
+--  weave doc@Document{documentHeaders = _} =
+--    unlines [ "\\input cwebmac"
+--            , concatMap weave (documentSections doc)
+--            , "\\inx"
+--            , "\\fin"
+--            , "\\con"
+--            ]
+{-# LINE 20 "org/weave.org" #-}

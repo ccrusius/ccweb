@@ -1,0 +1,102 @@
+* The Weaver
+
+#+BEGIN_SRC haskell :tangle "bin/ccweave.hs" :tangle-mode (identity #o444)
+<<Common-ccweb-code>>
+
+main :: IO ()
+main = do
+  opts <- O.execParser optParser
+  logM (logLevel opts) Debug "* Command line options:"
+  logM (logLevel opts) Debug (PP.render (pretty opts))
+  --let doc = parseDocument state (inputFile opts)
+  --logM (logLevel opts) Debug $ PP.render (pretty doc)
+  --putStrLn (weave doc)
+  where
+    optParser = O.info (userOptionParser <**> O.helper)
+      ( O.fullDesc
+      <> O.progDesc "Weave the input FILE"
+      <> O.header "ccweave - A literate programming weaver" )
+
+<<Weaver>>
+#+END_SRC
+
+#+NAME: Weaver
+#+BEGIN_SRC haskell
+--class Weave a where
+--  weave :: a -> String
+#+END_SRC
+
+#+NAME: Weaver
+#+BEGIN_SRC haskell
+--instance Weave Char where
+--  weave '&' = "{\\AM}"
+--  weave '\\' = "{\\BS}"
+--  weave '{' = "{\\LB}"
+--  weave '}' = "{\\RB}"
+--  weave '~' = "{\\TL}"
+--  weave '_' = "{\\UL}"
+--  weave '^' = "{\\CF}"
+--  weave '#' = "{\\#}"
+--  weave '$' = "{\\$}"
+--  weave '%' = "{\\%}"
+--  weave c = [c]
+#+END_SRC
+
+#+NAME: Weaver
+#+BEGIN_SRC haskell
+--instance Weave TextElement where
+--  weave (Plain s) = s
+--  weave (Bold s) = concat ["{\\bf ", s, "}"]
+--  weave (Italics s) = concat ["{\\it ", s, "\\/}"]
+--  weave (InlineCode s) = "\\hbox{\\tenex " ++ concatMap weave s ++ "}"
+--  weave (Verbatim s) = "\\hbox{\\tenex " ++ concatMap weave s ++ "}"
+#+END_SRC
+
+#+NAME: Weaver
+#+BEGIN_SRC haskell
+--instance Weave Text where
+--  weave (Text ts) = concatMap weave ts
+#+END_SRC
+
+The =\fi= at the end is necessary to balance out conditionals opened
+by the =cwebmac= macros issued at every section.
+
+#+NAME: Weaver
+#+BEGIN_SRC haskell
+--instance Weave Section where
+--  weave s = unlines (header : text) ++ code ++ "\\fi\n"
+--    where
+--      text = map weave (sectionText s)
+--      header = concat $
+--        case groupHeader s of
+--          Nothing -> [ "\\M{", show (sectionNumber s), "}"]
+--          Just h ->
+--            [ "\\N{", show (sectionDepth h), "}"
+--            , "{", show (sectionNumber s), "}"
+--            , weave (sectionHeaderTitle h), "."
+--            ]
+--      code = concat $
+--        case sectionCode s of
+--          Nothing -> []
+--          Just _ -> [ "\\X", ":", "\\X", "${}", "\\equiv{}$\n" ]
+#+END_SRC
+
+#+NAME: Weaver
+#+BEGIN_SRC haskell
+--instance Weave Document where
+--  weave Document{documentHeaders = []} = ""
+--  weave doc@Document{documentHeaders = _} =
+--    unlines [ "\\input cwebmac"
+--            , concatMap weave (documentSections doc)
+--            , "\\inx"
+--            , "\\fin"
+--            , "\\con"
+--            ]
+#+END_SRC
+
+** Cross-referencing code blocks
+
+Whenever I am printing a code block, I need to know which other blocks
+use it, and what other blocks have the same name.
+
+#+INCLUDE: "org/build.org"

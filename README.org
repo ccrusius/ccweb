@@ -1,3 +1,7 @@
 #+TITLE: CCWEB
 
-My own Org-based literate programming system.
+Org-based literate programming system.
+
+Many of the files you see in this repository, such as the Haskell
+[[bin/cctangle.hs][source]] [[bin/ccweave.hs][files]],
+were automatically generated from [[ccweb.org]].

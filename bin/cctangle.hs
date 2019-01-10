@@ -1,17 +1,3 @@
-#!/usr/bin/env stack
-{- stack
-  script
-  --resolver lts-12.22
-  --package containers
-  --package hostname
-  --package mtl
-  --package filepath
-  --package directory
-  --package unix
-  --package pretty
-  --package optparse-applicative
-  --package parsec
--}
 {-# LINE 63 "ccweb.org" #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}

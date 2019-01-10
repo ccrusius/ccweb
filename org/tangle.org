@@ -150,20 +150,25 @@ data TangleState = TangleState
 #+END_SRC
 
 As the name implies, I treat this as a proper state, using the ~State~
-monad.
+monad, for which I define a few state access and modification functions.
 
 #+NAME: Tangler
 #+BEGIN_SRC haskell
 type Tangler a = State TangleState a
-#+END_SRC
 
-To keep the global namespace pollution to a minimum, I will
-make things that can be tangled into lines instances of a ~Tangle~ class.
+getTopBlock :: Tangler SourceBlock
+getTopBlock = top . blocks <$> get
 
-#+NAME: Tangler
-#+BEGIN_SRC haskell
-class Tangle a where
-  tangle :: a -> Tangler [Line]
+getIndent :: Tangler Indent
+getIndent = indent <$> get
+
+setIndentFrom :: String -> Tangler ()
+setIndentFrom str = modify
+  (\s -> s{ indent = replicate (length str) ' ' })
+
+addIndentFrom :: String -> Tangler ()
+addIndentFrom str = modify
+  (\s -> s{ indent = indent s ++ replicate (length str) ' ' })
 #+END_SRC
 
 Tangling source blocks is a matter of tangling all the block lines --
@@ -172,18 +177,18 @@ pragma indicating the location of the block's first line.
 
 #+NAME: Tangler
 #+BEGIN_SRC haskell
-instance Tangle SourceBlock where
-  tangle block = do
-    modify (\s -> s{ blocks = push block (blocks s) })
-    ls <- concat <$> mapM tangle (blockLines block)
-    modify (\s -> s{ blocks = pop (blocks s) })
-    return $ maybeAddLinePragma block (blockLocation block) ls
+tangleSourceBlock :: SourceBlock -> Tangler [Line]
+tangleSourceBlock block = do
+  modify (\s -> s{ blocks = push block (blocks s) })
+  ls <- concat <$> mapM tangleCodeLine (blockLines block)
+  modify (\s -> s{ blocks = pop (blocks s) })
+  return $ maybeAddLinePragma ls (blockLocation block) block
 #+END_SRC
 
 #+NAME: Tangler
 #+BEGIN_SRC haskell
-maybeAddLinePragma :: SourceBlock -> P.SourcePos -> [Line] -> [Line]
-maybeAddLinePragma block pos ls =
+maybeAddLinePragma :: [Line] -> P.SourcePos -> SourceBlock -> [Line]
+maybeAddLinePragma ls pos block =
   case headerArg ":comments" block of
     Just (YesNo True) -> LinePragma (blockLanguage block) pos : ls
     _ -> ls
@@ -195,11 +200,9 @@ indentation to it.
 
 #+NAME: Tangler
 #+BEGIN_SRC haskell
-instance Tangle CodeLine where
-  tangle (CodeLine _ []) =
-    (:[]) . CodeText . indent <$> get
-  tangle (CodeLine _ elements) =
-    <<Tangle code line with ~elements~>>
+tangleCodeLine :: CodeLine -> Tangler [Line]
+tangleCodeLine (CodeLine _ []) = (:[]) . CodeText <$> getIndent
+<<Tangle non-empty code line>>
 #+END_SRC
 
 Tangling a non-empty code line is a matter of tangling all of its
@@ -215,7 +218,32 @@ things:
 
 This is what I am going to do: I am going to tangle one element at a
 time, and accumulate all that was tangled so far (in reverse order) in
-a list of lines. It will be useful to be able to separate them into a
+a list of lines.
+
+#+NAME: Tangle all ~element~s
+#+BEGIN_SRC haskell
+reverse <$> foldlM
+  (<<Tangle the next element and update the accumulated tangled lines>>)
+  [CodeText initialIndent] elements
+#+END_SRC
+
+#+NAME: Tangle non-empty code line
+#+BEGIN_SRC haskell
+tangleCodeLine (CodeLine _ elements) =
+  do
+    initialIndent <- getIndent
+    ls <- removeLeadingEmptyLine . <<Tangle all ~element~s>>
+    modify (\s -> s{ indent = initialIndent })
+    maybeAddLinePragma ls (getPosition $ head elements) <$> getTopBlock
+      where
+        removeLeadingEmptyLine :: [Line] -> [Line]
+        removeLeadingEmptyLine a@(CodeText l:p@(LinePragma _ _):ls)
+          | all isSpace l = p:ls
+          | otherwise = a
+        removeLeadingEmptyLine a = a
+#+END_SRC
+
+It will be useful to be able to separate the accumulated lines into a
 tail of pragma lines and and the remainder code text and pragma mix.
 
 #+NAME: Tangler
@@ -257,9 +285,8 @@ update the current indentation.
 #+BEGIN_SRC haskell
 (_, _, Literal pos s) -> do
   i <- getIndent
-  b <- top . blocks <$> get
   addIndentFrom s
-  return $ maybeAddLinePragma b pos (CodeText (i ++ s) : acc)
+  maybeAddLinePragma (CodeText (i ++ s) : acc) pos <$> getTopBlock
 #+END_SRC
 
 Now for the last and rather involved case: tangling a section
@@ -286,8 +313,7 @@ part. The basic logic is as follows:
     _ -> do
       setIndentFrom first
       return $ reverse refLines ++ acc
-  block <- top . blocks <$> get
-  return $ maybeAddLinePragma block pos acc'
+  maybeAddLinePragma acc' pos <$> getTopBlock
 #+END_SRC
 
 #+NAME: Get the tangled lines for a section reference named ~name~
@@ -295,7 +321,7 @@ part. The basic logic is as follows:
 do
   bs <- <<Gather code blocks named ~name~>> :: Tangler [SourceBlock]
   when (null bs) (error $ "source block not defined anywhere: " ++ show name)
-  concat <$> mapM tangle bs :: Tangler [Line]
+  concat <$> mapM tangleSourceBlock bs :: Tangler [Line]
 #+END_SRC
 
 #+NAME: Gather code blocks named ~name~
@@ -317,69 +343,8 @@ filter (\b -> case (blockName b) of
 )
 #+END_SRC
 
-
-** Tangled Lines
-
-#+NAME: Tangler
-#+BEGIN_SRC haskell
-getIndent :: Tangler String
-getIndent = indent <$> get
-
-setIndentFrom :: String -> Tangler ()
-setIndentFrom str = modify
-  (\s -> s{ indent = replicate (length str) ' ' })
-
-addIndentFrom :: String -> Tangler ()
-addIndentFrom str = modify
-  (\s -> s{ indent = indent s ++ replicate (length str) ' ' })
-#+END_SRC
-
-
-** Line Tangling
-
-The lines are kept in reverse order until the end for performance
-considerations. I need to merge the current last line to the next
-first line, and finding the last line of a list in Haskell is an
-expensive operation.
-
-#+NAME: Tangle code line with ~elements~
-#+BEGIN_SRC haskell
-do
-  state <- get
-  let lineBlock = top (blocks state)
-      lineIndent   = indent state
-      linePos = case head elements of
-              (Literal p _) -> p
-              (SectionReference p _) -> p
-  ls <- removeLeadingEmptyLine . reverse <$>
-       foldlM
-         (<<Tangle the next element and update the accumulated tangled lines>>)
-         [CodeText lineIndent] elements
-  modify (\s -> s{ indent = lineIndent })
-  return $ maybeAddLinePragma lineBlock linePos ls
-  where
-    removeLeadingEmptyLine :: [Line] -> [Line]
-    removeLeadingEmptyLine a@(CodeText l:p@(LinePragma _ _):ls)
-      | all isSpace l = p:ls
-      | otherwise = a
-    removeLeadingEmptyLine a = a
-#+END_SRC
-
-#+NAME: Imports
-#+BEGIN_SRC haskell
-import qualified System.Directory as D
-import qualified System.Environment as Env
-import qualified System.FilePath as F
-import qualified System.Posix.Files as F
-import qualified System.Posix.Types as F
-#+END_SRC
-
-#+NAME: stack-packages
-#+BEGIN_SRC shell
---package filepath
---package directory
---package unix
-#+END_SRC
+All that remains to do now is the unfinished ~IO~ business called from
+the ~main~ routine.
 
 #+NAME: Tangler
 #+BEGIN_SRC haskell
@@ -387,12 +352,15 @@ tangleFile :: Options -> Document -> (FilePath, [SourceBlock]) -> IO ()
 tangleFile opts _ (fp, []) =
   logM (logLevel opts) Warning $ "Not writing empty output file (" ++ fp ++ ")"
 tangleFile opts doc (fp, bs) = do
-  let ls = concatMap
-           (\b -> fst $ runState (tangle b) TangleState{ document = doc, indent = [], blocks = Stack [] })
+  let block = head bs
+      ls = concatMap
+           (\b -> fst $ runState (tangleSourceBlock b)
+                 TangleState{ document = doc
+                            , indent = []
+                            , blocks = Stack [] }
+           )
            bs
-      ls' = <<Remove redundant line pragmas>> ls
-      contents = concatMap show ls'
-      block = head bs
+      contents = concatMap show $ <<Remove redundant line pragmas>> ls
   logM (logLevel opts) Info $ "Writing the output file (" ++ fp ++ ")"
   if dryRun opts
     then logM (logLevel opts) Info contents
@@ -415,3 +383,18 @@ tangleFile opts doc (fp, bs) = do
               _ -> False
 #+END_SRC
 
+#+NAME: Imports
+#+BEGIN_SRC haskell
+import qualified System.Directory as D
+import qualified System.Environment as Env
+import qualified System.FilePath as F
+import qualified System.Posix.Files as F
+import qualified System.Posix.Types as F
+#+END_SRC
+
+#+NAME: stack-packages
+#+BEGIN_SRC shell
+--package filepath
+--package directory
+--package unix
+#+END_SRC

@@ -1,0 +1,83 @@
+* The Org Document Structure
+
+#+NAME: Document data model
+#+BEGIN_SRC haskell
+data Document = Document
+  { orgKeywords :: [Keyword]
+  , orgSections :: [Section]
+  }
+#+END_SRC
+
+#+NAME: Document data model
+#+BEGIN_SRC haskell
+data Keyword = AuthorKeyword Text
+             | PropertyKeyword Properties
+             | TitleKeyword Text
+             | OtherKeyword String
+#+END_SRC
+
+#+NAME: Document data model
+#+BEGIN_SRC haskell
+data Section = Section
+  { sectionHeadline :: Maybe Headline
+  , sectionProps :: Properties
+  , sectionDerivedProperties :: Properties
+  , sectionDocumentation :: [Text]
+  , sectionSourceBlock :: Maybe SourceBlock
+  }
+#+END_SRC
+
+#+NAME: Document data model
+#+BEGIN_SRC haskell
+data Headline = Headline Int Text
+#+END_SRC
+
+#+NAME: Document data model
+#+BEGIN_SRC haskell
+data Text = Text [TextElement] deriving (Eq, Ord, Show)
+
+data TextElement =
+  Bold String
+  | InlineCode String
+  | Italics String
+  | Plain String
+  | StrikeThrough String
+  | Verbatim String
+  deriving (Eq, Ord, Show)
+#+END_SRC
+
+#+NAME: Document data model
+#+BEGIN_SRC haskell
+data SourceBlock = SourceBlock
+  { blockName :: Maybe Text
+  , blockLanguage :: String
+  , blockProperties :: Property
+  , blockDerivedProperties :: Property
+  , blockLocation :: P.SourcePos
+  , blockLines :: [CodeLine]
+  }
+#+END_SRC
+
+#+NAME: Document data model
+#+BEGIN_SRC haskell
+type Property = Map.Map String SExpression
+type Properties = Map.Map String Property
+#+END_SRC
+
+#+NAME: Document data model
+#+BEGIN_SRC haskell
+data SExpression =
+  Atom String
+  | Series [SExpression]
+  | YesNo Bool
+  deriving (Eq, Ord)
+#+END_SRC
+
+#+NAME: Document data model
+#+BEGIN_SRC haskell
+data CodeElement = Literal P.SourcePos String
+                 | SectionReference P.SourcePos Text
+
+data CodeLine = CodeLine P.SourcePos [CodeElement]
+#+END_SRC
+

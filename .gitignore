@@ -6,8 +6,7 @@
 *.scn
 bin/ccweb.tex
 build/
-bin/
+bin/cctangle
+bin/ccweave
 bootstrap/ccweave
 work/
-stack.yaml
-ccweb.cabal
