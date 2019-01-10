@@ -11,7 +11,7 @@ main = do
                   // The line pragma should still be a Haskell one
                   std::cerr << "This is not C++" << std::endl;
 {-# LINE 58 "tests/tangle.org" #-}
-                                                                   >> putStrLn ")"
+                                                               >> putStrLn ")"
   putStrLn str
 {-# LINE 63 "tests/tangle.org" #-}
 str :: String

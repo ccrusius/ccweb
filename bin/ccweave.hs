@@ -16,7 +16,7 @@ import Data.Maybe (fromJust, isJust, mapMaybe)
 import qualified Data.Map as Map
 import GHC.Exts (IsList(..), groupWith, sortWith)
 import Network.HostName (getHostName)
-{-# LINE 386 "org/tangle.org" #-}
+{-# LINE 388 "org/tangle.org" #-}
 import qualified System.Directory as D
 import qualified System.Environment as Env
 import qualified System.FilePath as F
@@ -448,7 +448,7 @@ ingest fp = do
                                  *> P.manyTill anyChar (P.char '"')
                                )
 {-# LINE 563 "ccweb.org" #-}
-                                              )
+                                )
            (P.sourceName p) s
       of
         Nothing -> return (l : acc)
@@ -463,7 +463,7 @@ instance Parse TextElement where
                                       <|> P.try (StrikeThrough <$> enclosed '+')
                                       <|> P.try (Verbatim <$> enclosed '=')
 {-# LINE 600 "ccweb.org" #-}
-                                                                   )
+                                                                           )
 {-# LINE 622 "ccweb.org" #-}
 instance Parse Text where
   parse = do
@@ -496,7 +496,7 @@ instance Parse CodeElement where
                          --parserTrace $ PP.text "Reference parsed" PP.<> PP.colon PP.<> pretty r
                          return r
 {-# LINE 651 "ccweb.org" #-}
-                         )
+                                 )
 {-# LINE 679 "ccweb.org" #-}
 instance Parse CodeLine where
   parse = line (liftA2 CodeLine
@@ -512,7 +512,7 @@ instance Parse SExpression where
                   *> (P.sepEndBy parse spaces1 <* P.char ')')
                 )
 {-# LINE 708 "ccweb.org" #-}
-                                    )
+                 )
     <|>
     P.try (
 {-# LINE 725 "ccweb.org" #-}
@@ -522,7 +522,7 @@ instance Parse SExpression where
              (P.string "yes" *> P.lookAhead P.space *> return True)
              )
 {-# LINE 710 "ccweb.org" #-}
-                      )
+              )
     <|>
     (
 {-# LINE 734 "ccweb.org" #-}
@@ -588,12 +588,12 @@ instance Parse Properties where
                               v <- parse :: Parser SExpression
                               return (k, v)
 {-# LINE 817 "ccweb.org" #-}
-                              )
+                                           )
                            spaces1)
 {-# LINE 810 "ccweb.org" #-}
              return $ Map.singleton p kvs
 {-# LINE 800 "ccweb.org" #-}
-             )
+                                         )
               <|> (
 {-# LINE 831 "ccweb.org" #-}
                    do
@@ -614,15 +614,15 @@ instance Parse Properties where
                                            v <- parse :: Parser SExpression
                                            return (k, v)
 {-# LINE 817 "ccweb.org" #-}
-                                           )
+                                                        )
                                         spaces1)
 {-# LINE 843 "ccweb.org" #-}
                           return (p, kvs)
 {-# LINE 834 "ccweb.org" #-}
-                          )
+                                         )
                        (P.try (spaces *> P.string ":END:" *> spaces *> endOfLine))
 {-# LINE 801 "ccweb.org" #-}
-                     )
+                                                                                  )
 {-# LINE 848 "ccweb.org" #-}
 fileMode :: SExpression -> F.FileMode
 fileMode (Series (Atom "identity" : Atom ('#':'o':a:g:u:[]) : [])) =
@@ -649,7 +649,7 @@ instance Parse SourceBlock where
                          *> spaces
                          *> parse :: Parser Text
 {-# LINE 906 "ccweb.org" #-}
-                                                             )
+                                                )
     i  <- P.try (spaces <* (P.string "#+BEGIN_SRC" *> spaces1))
     --parserTrace "SourceBlock: found a code block, parsing language"
     l  <- symbol <* spaces
@@ -665,7 +665,7 @@ instance Parse SourceBlock where
                     v <- parse :: Parser SExpression
                     return (k, v)
 {-# LINE 817 "ccweb.org" #-}
-                    )
+                                 )
                  spaces1)
 {-# LINE 912 "ccweb.org" #-}
     ps' <- Map.union ps . headerArgs . top . propertyStack <$> P.getState
@@ -782,7 +782,7 @@ instance Parse Keyword where
                                                v <- parse :: Parser SExpression
                                                return (k, v)
 {-# LINE 817 "ccweb.org" #-}
-                                               )
+                                                            )
                                             spaces1)
 {-# LINE 810 "ccweb.org" #-}
                               return $ Map.singleton p kvs
@@ -865,15 +865,15 @@ userOptionParser = Options
               <> O.help "Be verbose. Can be given multiple times for more verbosity."
             ))
 {-# LINE 253 "ccweb.org" #-}
-                                 ) <|> (
+              ) <|> (
 {-# LINE 274 "ccweb.org" #-}
-                                        O.flag Warning Quiet
-                                          ( O.short 'q'
-                                            <> O.long "quiet"
-                                            <> O.help "Only print things that were asked for."
-                                          )
+                     O.flag Warning Quiet
+                       ( O.short 'q'
+                         <> O.long "quiet"
+                         <> O.help "Only print things that were asked for."
+                       )
 {-# LINE 253 "ccweb.org" #-}
-                                                            ))
+                        ))
 {-# LINE 245 "ccweb.org" #-}
   <*> dryRunParser
   <*> 
@@ -899,7 +899,7 @@ userOptionParser = Options
          <> O.help "The name of the input file."
          )
 {-# LINE 248 "ccweb.org" #-}
-                       )
+          )
 {-# LINE 309 "ccweb.org" #-}
 dryRunParser :: O.Parser Bool
 dryRunParser = O.switch

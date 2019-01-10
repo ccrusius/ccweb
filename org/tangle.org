@@ -308,8 +308,10 @@ part. The basic logic is as follows:
       addIndentFrom unindented
       return $ reverse rest ++ (CodeText(l ++ unindented) : ls)
     _ -> do
-      setIndentFrom first
-      return $ reverse refLines ++ acc
+      let reverseRefLines = reverse refLines
+          CodeText lst = head . snd $ breakCodeText reverseRefLines
+      setIndentFrom lst
+      return $ reverseRefLines ++ acc
   getTopBlock >>= maybeAddLinePragma acc' pos
 #+END_SRC
 
