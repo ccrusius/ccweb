@@ -185,8 +185,9 @@ tangleSourceBlock block = do
 maybeAddLinePragma :: [Line] -> P.SourcePos -> SourceBlock -> Tangler [Line]
 maybeAddLinePragma ls pos block = do
   lang <- pragmaLanguage <$> get
-  return $ case headerArg ":comments" block of
-    Just (YesNo True) -> LinePragma lang pos : ls
+  let pragma = LinePragma lang pos
+  return $ case (headerArg ":comments" block, show pragma) of
+    (Just (YesNo True), (_:_)) -> pragma : ls
     _ -> ls
 #+END_SRC
 
