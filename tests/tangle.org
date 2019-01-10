@@ -65,8 +65,9 @@ str = "Hello, world!"
 #+END_SRC
 
 #+NAME: Put string again
-#+BEGIN_SRC haskell
-putStrLn str
+#+BEGIN_SRC c++
+// The line pragma should still be a Haskell one
+std::cerr << "This is not C++" << std::endl;
 #+END_SRC
 
 * 005: Mixed line numbers on and off
@@ -74,10 +75,9 @@ putStrLn str
 :header-args: :tangle "tests/out/tangle005.hs" :comments yes
 :END:
 
-#+BEGIN_SRC shell
-#!/bin/bash
+#+BEGIN_SRC haskell :comments no
 <<005: With line numbers>>
-echo "Hello, world!"
+putStrLn "Hello, world!"
 #+END_SRC
 
 #+NAME: 005: With line numbers

@@ -135,10 +135,10 @@ type Indent = String
 #+END_SRC
 
 This indentation is kept in a ~TangleState~ object that gets updated
-as tangling moves along. Two other pieces of information will be needed:
-the original document, so I can expand references, and a stack of
+as tangling moves along. Three other pieces of information will be needed:
+the original document, so I can expand references; a stack of
 source blocks currently being tangled, so I can access the currently
-active set of Org properties.
+active set of Org properties; and the language to use for line pragmas.
 
 #+NAME: Tangler
 #+BEGIN_SRC haskell
@@ -146,6 +146,7 @@ data TangleState = TangleState
   { document :: Document
   , indent :: Indent
   , blocks :: Stack SourceBlock
+  , pragmaLanguage :: String
   }
 #+END_SRC
 
@@ -182,15 +183,16 @@ tangleSourceBlock block = do
   modify (\s -> s{ blocks = push block (blocks s) })
   ls <- concat <$> mapM tangleCodeLine (blockLines block)
   modify (\s -> s{ blocks = pop (blocks s) })
-  return $ maybeAddLinePragma ls (blockLocation block) block
+  maybeAddLinePragma ls (blockLocation block) block
 #+END_SRC
 
 #+NAME: Tangler
 #+BEGIN_SRC haskell
-maybeAddLinePragma :: [Line] -> P.SourcePos -> SourceBlock -> [Line]
-maybeAddLinePragma ls pos block =
-  case headerArg ":comments" block of
-    Just (YesNo True) -> LinePragma (blockLanguage block) pos : ls
+maybeAddLinePragma :: [Line] -> P.SourcePos -> SourceBlock -> Tangler [Line]
+maybeAddLinePragma ls pos block = do
+  lang <- pragmaLanguage <$> get
+  return $ case headerArg ":comments" block of
+    Just (YesNo True) -> LinePragma lang pos : ls
     _ -> ls
 #+END_SRC
 
@@ -234,7 +236,7 @@ tangleCodeLine (CodeLine _ elements) =
     initialIndent <- getIndent
     ls <- removeLeadingEmptyLine . <<Tangle all ~element~s>>
     modify (\s -> s{ indent = initialIndent })
-    maybeAddLinePragma ls (getPosition $ head elements) <$> getTopBlock
+    getTopBlock >>= maybeAddLinePragma ls (getPosition $ head elements)
       where
         removeLeadingEmptyLine :: [Line] -> [Line]
         removeLeadingEmptyLine a@(CodeText l:p@(LinePragma _ _):ls)
@@ -286,7 +288,7 @@ update the current indentation.
 (_, _, Literal pos s) -> do
   i <- getIndent
   addIndentFrom s
-  maybeAddLinePragma (CodeText (i ++ s) : acc) pos <$> getTopBlock
+  getTopBlock >>= maybeAddLinePragma (CodeText (i ++ s) : acc) pos
 #+END_SRC
 
 Now for the last and rather involved case: tangling a section
@@ -313,7 +315,7 @@ part. The basic logic is as follows:
     _ -> do
       setIndentFrom first
       return $ reverse refLines ++ acc
-  maybeAddLinePragma acc' pos <$> getTopBlock
+  getTopBlock >>= maybeAddLinePragma acc' pos
 #+END_SRC
 
 #+NAME: Get the tangled lines for a section reference named ~name~
@@ -357,7 +359,8 @@ tangleFile opts doc (fp, bs) = do
            (\b -> fst $ runState (tangleSourceBlock b)
                  TangleState{ document = doc
                             , indent = []
-                            , blocks = Stack [] }
+                            , blocks = Stack []
+                            , pragmaLanguage = blockLanguage block }
            )
            bs
       contents = concatMap show $ <<Remove redundant line pragmas>> ls
