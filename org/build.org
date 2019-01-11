@@ -6,7 +6,7 @@ generate the /build system/ itself.
 
 #+BEGIN_SRC makefile :tangle "GNUmakefile" :tangle-mode (identity #o644)
 all: bin/cctangle bin/ccweave
-test: test_cctangle
+test: test_cctangle test_ccweave
 
 <<=GNUmakefile= rules>>
 #+END_SRC
@@ -26,7 +26,7 @@ every time I change this source file.
 #+NAME: =GNUmakefile= rules
 #+BEGIN_SRC makefile
 inotify:
-	while inotifywait -e modify ${SOURCE_FILES}; do \
+	while inotifywait -e modify ${SOURCE_FILES} tests/*.org; do \
 	make -j test; \
 	done
 #+END_SRC
@@ -75,10 +75,11 @@ ${OUTPUT_FILES}: ${SOURCE_FILES}
 
 #+NAME: =GNUmakefile= rules
 #+BEGIN_SRC makefile
-bin/%: bin/%.hs
+bin/%tangle bin/%weave: bin/cctangle.hs bin/ccweave.hs
 	@rm -f $@
-	stack build --trace $(subst bin/,ccweb:,$@)
-	cp `stack exec -- which $(subst bin/,,$@)` $@
+	stack build --trace
+	cp `stack exec -- which ccweave` bin/ccweave
+	cp `stack exec -- which cctangle` bin/cctangle
 #+END_SRC
 
 #+NAME: =GNUmakefile= rules

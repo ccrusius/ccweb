@@ -19,7 +19,8 @@ data Keyword = AuthorKeyword Text
 #+NAME: Document data model
 #+BEGIN_SRC haskell
 data Section = Section
-  { sectionHeadline :: Maybe Headline
+  { sectionNumber :: Int
+  , sectionHeadline :: Maybe Headline
   , sectionProps :: Properties
   , sectionDerivedProperties :: Properties
   , sectionDocumentation :: [Text]
@@ -29,7 +30,7 @@ data Section = Section
 
 #+NAME: Document data model
 #+BEGIN_SRC haskell
-data Headline = Headline Int Text
+data Headline = Headline Int Text deriving Show
 #+END_SRC
 
 #+NAME: Document data model

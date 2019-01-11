@@ -2,16 +2,38 @@
 #+AUTHOR: Cesar Crusius
 #+STARTUP: indent
 
-* Top-level section
+* Section with sub-sections
+
+** Empty sub-section
+
+** Sub-section after empty sub-section
+
+* Titled section with properties and nothing else
+:PROPERTIES:
+:header-args: x=y
+:END:
+
+* Titled empty section
+
+* Titled section with text and nothing else
 
 Text with /italic/, *bold*, ={verbatim}=, and ~code~.
+
+* Titled section with code and nothing else
 
 #+BEGIN_SRC haskell
 main :: IO ()
 #+END_SRC
 
-A paragraph.
+#+BEGIN_SRC haskell
+putStrLn "code-only section"
+#+END_SRC
 
-** Sub-section
+Unnamed section with only text.
 
-* Another top-level section
+Unnamed section with text and code.
+
+#+BEGIN_SRC haskell
+putStrLn "unnamed section with text and code"
+#+END_SRC
+

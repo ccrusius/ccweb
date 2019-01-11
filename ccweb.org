@@ -52,7 +52,7 @@ import Control.Monad.State (State, get, modify, runState)
 import Data.Foldable (foldlM, foldrM)
 import Data.Char (isPrint, isSpace, ord)
 import Data.List (intercalate, isPrefixOf, isSuffixOf, nub, sort)
-import Data.Maybe (fromJust, isJust, mapMaybe)
+import Data.Maybe (fromJust, fromMaybe, isJust, mapMaybe)
 import qualified Data.Map as Map
 import GHC.Exts (IsList(..), groupWith, sortWith)
 import Network.HostName (getHostName)
@@ -343,16 +343,16 @@ class Parse a where
 #+NAME: Parser
 #+BEGIN_SRC haskell
 data ParserState = ParserState
-  { sectionNumber :: Int
-  , propertyStack :: Stack Properties
-  , hostName      :: String
+  { sectionCounter :: Int
+  , propertyStack  :: Stack Properties
+  , hostName       :: String
   }
 
 initialParserState :: ParserState
 initialParserState = ParserState
-  { sectionNumber = 0
-  , propertyStack = Stack []
-  , hostName      = []
+  { sectionCounter = 0
+  , propertyStack  = Stack []
+  , hostName       = []
   }
 #+END_SRC
 
@@ -620,11 +620,15 @@ instance Pretty Text where
   pretty (Text xs) = PP.text "Text:" PP.<+> PP.hcat (map pretty xs)
 #+END_SRC
 
+I have little choice but to check for non-text things here.
+
 #+NAME: Parser
 #+BEGIN_SRC haskell
 instance Parse Text where
   parse = do
     --parserTrace "Text: parse"
+    P.notFollowedBy (parse :: Parser Headline)
+    P.notFollowedBy (spaces *> P.string "#+")
     Text <$> line (P.many1 parse :: Parser [TextElement])
 #+END_SRC
 
@@ -977,7 +981,8 @@ enclosed d = P.try (P.char d) *> P.manyTill anyChar (P.char d)
 #+BEGIN_SRC haskell
 instance Pretty Section where
   pretty s = pretty $ PrettyStruct "Section"
-               [ ("headline", pretty (sectionHeadline s))
+               [ ("number", pretty (sectionNumber s))
+               , ("headline", pretty (sectionHeadline s))
                , ("properties", pretty (sectionProps s))
                , ("derived properties", pretty (sectionDerivedProperties s))
                , ("text", pretty (sectionDocumentation s))
@@ -997,10 +1002,12 @@ instance Parse Section where
   parse = do
     skipEmptyLines
     h <- P.optionMaybe parse :: Parser (Maybe Headline)
-    --parserTrace $ PP.text "Section: headline=" PP.<> pretty h
+
     skipEmptyLines
-    ps <- parse <|> return Map.empty :: Parser Properties
-    --parserTrace $ PP.text "Section: properties=" PP.<> pretty ps
+    ps <- case h of
+      Nothing -> return Map.empty
+      _ -> parse <|> return Map.empty :: Parser Properties
+
     when (isJust h) $ do
       P.updateState (\s ->
         s{ propertyStack =
@@ -1008,41 +1015,30 @@ instance Parse Section where
              . resize (headlineLevel $ fromJust h)
              $ propertyStack s
          })
-    P.updateState (\s -> s{ sectionNumber = 1 + (sectionNumber s) })
-    ps' <- top . propertyStack <$> P.getState
-    --parserTrace $ PP.text "Section: derived properties=" PP.<> pretty ps'
-    skipEmptyLines
-    --parserTrace "Section: about to scan for text and code"
-    (ts, c) <- scan
-    --parserTrace "Section: section parsed"
+
     state <- P.getState
+
+    skipEmptyLines
+    ts  <- P.optionMaybe $ P.many1 $ parse :: Parser (Maybe [Text])
+
+    skipEmptyLines
+    c <- case (ts, h) of
+          (Nothing, Nothing) -> Just <$> (parse :: Parser SourceBlock)
+          (_, _) -> P.optionMaybe $ parse :: Parser (Maybe SourceBlock)
+
+    skipEmptyLines
+
+    let n = sectionCounter state
+        ps' = top . propertyStack $ state
+    P.updateState (\s -> s{ sectionCounter = 1 + n })
     return Section
-      { sectionHeadline = h
+      { sectionNumber = n
+      , sectionHeadline = h
       , sectionProps = ps
       , sectionDerivedProperties = eval state ps'
-      , sectionDocumentation = ts
+      , sectionDocumentation = fromMaybe [] ts
       , sectionSourceBlock = c
       }
-      where
-        scan :: Parser ([Text], Maybe SourceBlock)
-        scan = <<Parse section documentation followed by a code block>>
-#+END_SRC
-
-#+NAME: Parse section documentation followed by a code block
-#+BEGIN_SRC haskell
-do{ c <- parse :: Parser SourceBlock; return ([], Just c) }
-<|>
-  (do
-      P.skipMany1 (P.try emptyLine)
-      c <- P.optionMaybe parse :: Parser (Maybe SourceBlock)
-      return ([], c)
-  )
-<|>
-  (do
-      t <- parse :: Parser Text
-      s <- scan
-      return ( t:(fst s), snd s )
-  )
 #+END_SRC
 
 ** Keywords
@@ -1126,3 +1122,5 @@ readOrgFile fp = do
         ingested
   return (ingested, doc)
 #+END_SRC
+
+#+INCLUDE: "org/build.org"
