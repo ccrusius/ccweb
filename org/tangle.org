@@ -12,7 +12,7 @@ main = do
   opts <- O.execParser optParser
   logM (logLevel opts) Info $ "This is CCWEB"
 
-  (ingested, doc) <- readOrgFile (inputFile opts)
+  (ingested, doc) <- readOrgFile (logLevel opts) (inputFile opts)
   logM (logLevel opts) Debug $ PP.render (pretty ingested)
   logM (logLevel opts) Debug $ PP.render (pretty doc)
 

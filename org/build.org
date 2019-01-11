@@ -88,9 +88,9 @@ DIFF := git --no-pager diff --no-index
 
 test_cctangle: bin/cctangle
 	@rm -f tests/out/tangle*
-	stack exec cctangle -- -nvvvv tests/tangle.org >/dev/null
-	stack exec cctangle -- -IOnvvvv tests/tangle.org >/dev/null
-	stack exec cctangle -- -IOnvvvv ccweb.org >/dev/null
+	stack exec cctangle -- -n tests/tangle.org >/dev/null
+	stack exec cctangle -- -IOn tests/tangle.org >/dev/null
+	stack exec cctangle -- -IOn ccweb.org >/dev/null
 	stack exec cctangle -- tests/tangle.org >/dev/null
 	${DIFF} tests/ref/tangle001.hs tests/out/tangle001.hs
 	${DIFF} tests/ref/tangle002.hs tests/out/tangle002.hs

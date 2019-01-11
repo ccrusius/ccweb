@@ -53,6 +53,7 @@ import Data.Foldable (foldlM, foldrM)
 import Data.Char (isPrint, isSpace, ord)
 import Data.List (intercalate, isPrefixOf, isSuffixOf, nub, sort)
 import Data.Maybe (fromJust, fromMaybe, isJust, mapMaybe)
+import Debug.Trace (trace)
 import qualified Data.Map as Map
 import GHC.Exts (IsList(..), groupWith, sortWith)
 import Network.HostName (getHostName)
@@ -85,6 +86,9 @@ the desired size is reached.
 #+NAME: Parser
 #+BEGIN_SRC haskell
 newtype Stack a = Stack [a]
+
+instance Pretty a => Pretty (Stack a) where
+  pretty (Stack xs) = pretty xs
 
 top :: Stack a -> a
 top (Stack xs) = head xs
@@ -191,24 +195,26 @@ instance Pretty P.SourcePos where
 
 #+NAME: Logging
 #+BEGIN_SRC haskell
-data LogLevel = Quiet | Error | Warning | Info | Debug deriving Show
+data LogLevel = Quiet | Error | Warning | Info | Debug | Trace deriving (Eq,Show)
+
+instance Ord LogLevel where
+  (<=) _ Trace = True
+  (<=) Trace _ = False
+  (<=) _ Debug = True
+  (<=) Debug _ = False
+  (<=) _ Info = True
+  (<=) Info _ = False
+  (<=) _ Warning = True
+  (<=) Warning _ = False
+  (<=) _ Error = True
+  (<=) Error _ = False
+  (<=) Quiet Quiet = True
 
 instance Pretty LogLevel where
   pretty = PP.text . show
 
 logM :: Pretty a => LogLevel -> LogLevel -> a -> IO ()
-logM _ Quiet a = logM' a
-logM Quiet _ _ = return ()
-logM _ Error a = logM' a
-logM Error _ _ = return ()
-logM _ Warning a = logM' a
-logM Warning _ _ = return ()
-logM _ Info a = logM' a
-logM Info _ _ = return ()
-logM _ Debug a = logM' a
-
-logM' :: Pretty a => a -> IO ()
-logM' = putStrLn . PP.render . pretty
+logM lvl minLvl = when (lvl >= minLvl) . putStrLn . PP.render . pretty
 #+END_SRC
 
 * User Options
@@ -262,7 +268,8 @@ userOptionParser = Options
          0 -> Error
          1 -> Warning
          2 -> Info
-         _ -> Debug)
+         3 -> Debug
+         _ -> Trace)
 <$>
 O.some
   ( O.flag' ()
@@ -346,25 +353,44 @@ data ParserState = ParserState
   { sectionCounter :: Int
   , propertyStack  :: Stack Properties
   , hostName       :: String
+  , parserLogLevel :: LogLevel
   }
+
+instance Pretty ParserState where
+  pretty s = pretty $ PrettyStruct "ParserState"
+      [ ("counter", pretty (sectionCounter s))
+      , ("host", pretty (hostName s))
+      , ("log level", pretty (parserLogLevel s))
+      , ("property stack", pretty (propertyStack s))
+      ]
 
 initialParserState :: ParserState
 initialParserState = ParserState
   { sectionCounter = 0
   , propertyStack  = Stack []
+  , parserLogLevel = Debug
   , hostName       = []
   }
 #+END_SRC
 
 #+NAME: Parser
 #+BEGIN_SRC haskell
---parserTrace :: Pretty a => a -> Parser ()
---parserTrace l = do
---  (OrgFile ls) <- P.stateInput <$> P.getParserState
---  p <- P.getPosition
---  let label = pretty p PP.<> PP.colon PP.<> pretty l PP.<> PP.colon
---      state = pretty (take 3 ls)
---  Debug.trace (PP.render (PP.hang label 4 state)) $ return ()
+parserDebug :: (Pretty a, Pretty b) => a -> b -> Parser ()
+parserDebug l s = do
+  lvl <- parserLogLevel <$> P.getState
+  pos <- P.getPosition
+  let label = pretty pos PP.<> PP.colon PP.<> pretty l PP.<> PP.colon
+  if lvl >= Trace
+  then trace (PP.render (PP.hang label 4 (pretty s))) $ return ()
+  else return ()
+
+parserTrace :: Pretty a => a -> Parser ()
+parserTrace l = do
+  (OrgFile ls) <- P.stateInput <$> P.getParserState
+  u <- P.getState
+  let user = pretty "user state" PP.<> PP.colon PP.<> pretty u
+      input = pretty "looking at" PP.<> PP.colon PP.<> pretty (take 3 ls)
+  parserDebug l (PP.fcat [user, input])
 #+END_SRC
 
 ** Position in the Source
@@ -628,7 +654,8 @@ instance Parse Text where
   parse = do
     --parserTrace "Text: parse"
     P.notFollowedBy (parse :: Parser Headline)
-    P.notFollowedBy (spaces *> P.string "#+")
+    P.notFollowedBy (spaces *> P.string "#+NAME")
+    P.notFollowedBy (spaces *> P.string "#+BEGIN_SRC")
     Text <$> line (P.many1 parse :: Parser [TextElement])
 #+END_SRC
 
@@ -1000,6 +1027,8 @@ instance HeaderArgs Section where
 #+BEGIN_SRC haskell
 instance Parse Section where
   parse = do
+    parserTrace "start of section parsing"
+
     skipEmptyLines
     h <- P.optionMaybe parse :: Parser (Maybe Headline)
 
@@ -1007,16 +1036,14 @@ instance Parse Section where
     ps <- case h of
       Nothing -> return Map.empty
       _ -> parse <|> return Map.empty :: Parser Properties
+    parserDebug "section properties" ps
 
     when (isJust h) $ do
-      P.updateState (\s ->
-        s{ propertyStack =
-             push (Map.union ps $ top $ propertyStack s)
-             . resize (headlineLevel $ fromJust h)
-             $ propertyStack s
-         })
-
-    state <- P.getState
+      stk' <- resize (1 + (headlineLevel $ fromJust h)) . propertyStack <$> P.getState
+      P.updateState (\s -> s{ propertyStack = stk' })
+      ps' <- Map.unionWith Map.union ps . top . propertyStack <$> P.getState
+      P.updateState (\s -> s{ propertyStack = push ps' stk' })
+    P.getState >>= parserDebug "updated parser properties" . propertyStack
 
     skipEmptyLines
     ts  <- P.optionMaybe $ P.many1 $ parse :: Parser (Maybe [Text])
@@ -1028,6 +1055,9 @@ instance Parse Section where
 
     skipEmptyLines
 
+    parserTrace "end of section parsing"
+
+    state <- P.getState
     let n = sectionCounter state
         ps' = top . propertyStack $ state
     P.updateState (\s -> s{ sectionCounter = 1 + n })
@@ -1111,13 +1141,13 @@ instance Parse Document where
 
 #+NAME: Parser
 #+BEGIN_SRC haskell
-readOrgFile :: FilePath -> IO (OrgFile, Document)
-readOrgFile fp = do
+readOrgFile :: LogLevel -> FilePath -> IO (OrgFile, Document)
+readOrgFile lvl fp = do
   ingested <- fromList <$> ingest fp :: IO OrgFile
   h <- getHostName
   let doc = fromEither $ P.runParser
         (parse :: Parser Document)
-        initialParserState{ hostName = h }
+        initialParserState{ hostName = h, parserLogLevel = lvl }
         fp
         ingested
   return (ingested, doc)
