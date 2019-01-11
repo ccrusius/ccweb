@@ -1,12 +1,12 @@
 all: bin/cctangle bin/ccweave
-test: test_cctangle
+test: test_cctangle test_ccweave
 
 BOOTSTRAP_TANGLER := bootstrap/cctangle
 
 SOURCE_FILES := $(shell ${BOOTSTRAP_TANGLER} -Inq ccweb.org)
 OUTPUT_FILES := $(shell ${BOOTSTRAP_TANGLER} -Onq ccweb.org)
 inotify:
-	while inotifywait -e modify ${SOURCE_FILES}; do \
+	while inotifywait -e modify ${SOURCE_FILES} tests/*.org; do \
 	make -j test; \
 	done
 define STACK_PREAMBLE
@@ -43,10 +43,11 @@ ${OUTPUT_FILES}: ${SOURCE_FILES}
 	@mkdir -p bin
 	@rm -f $@
 	${BOOTSTRAP_TANGLER} ccweb.org
-bin/%: bin/%.hs
+bin/%tangle bin/%weave: bin/cctangle.hs bin/ccweave.hs
 	@rm -f $@
-	stack build --trace $(subst bin/,ccweb:,$@)
-	cp `stack exec -- which $(subst bin/,,$@)` $@
+	stack build --trace
+	cp `stack exec -- which ccweave` bin/ccweave
+	cp `stack exec -- which cctangle` bin/cctangle
 DIFF := git --no-pager diff --no-index
 
 test_cctangle: bin/cctangle
