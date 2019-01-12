@@ -10,7 +10,7 @@
 main :: IO ()
 main = do
   opts <- O.execParser optParser
-  logM (logLevel opts) Info $ "This is CCWEB"
+  logM (logLevel opts) Info $ "This is CCTANGLE"
 
   (ingested, doc) <- readOrgFile (logLevel opts) (inputFile opts)
   logM (logLevel opts) Debug $ PP.render (pretty ingested)
@@ -18,7 +18,7 @@ main = do
 
   home <- Env.getEnv "HOME"
   let outs = <<Gather blocks to tangle to files>> :: [(FilePath, [SourceBlock])]
-  <<List input and output files>>
+  <<List =CCTANGLE= input and output files>>
   logM (logLevel opts) Debug $ PP.render (pretty outs)
 
   mapM_ (tangleFile opts doc) outs
@@ -40,9 +40,9 @@ blocks. Included here is the expansion of the user's home directory.
   . (map (\(f,ss) -> (f, map (fromJust . sectionSourceBlock) ss))
      :: [(FilePath, [Section])] -> [(FilePath, [SourceBlock])])
   . (mapMaybe (\(i,ss) -> case i of; (FileBlock f) -> Just (f,ss); _ -> Nothing)
-     :: [(SourceBlockId, [Section])] -> [(FilePath, [Section])])
+     :: DocumentPartition -> [(FilePath, [Section])])
   . (<<Partition a document into source block-defining sections>>
-     :: Document -> [(SourceBlockId, [Section])])
+     :: Document -> DocumentPartition)
   $ doc
 #+END_SRC
 
@@ -50,7 +50,7 @@ Once I have the input file ~ingested~ and parsed, I can print out all
 the input and output files. The former are listed in the ~ingested~
 lines, and the latter are the first element of the ~outs~ tuples.
 
-#+NAME: List input and output files
+#+NAME: List =CCTANGLE= input and output files
 #+BEGIN_SRC haskell
 when (listOutputFiles opts) $ mapM_ putStrLn (map fst outs)
 when (listInputFiles opts)  $ mapM_ putStrLn (
@@ -369,10 +369,9 @@ tangleFile opts doc (fp, bs) = do
       let dir = F.takeDirectory fp
       when (mkDir && dir /= ".") $ D.createDirectoryIfMissing True dir
 
-      exists <- F.fileExist fp
-      when exists $ F.removeLink fp
-
+      F.fileExist fp >>= (`when` F.removeLink fp)
       writeFile fp contents
+
       case headerArg ":tangle-mode" block of
         Nothing -> return ()
         Just expr -> do

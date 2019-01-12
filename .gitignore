@@ -1,3 +1,4 @@
+*.dvi
 *.out
 *.swp
 *.log
@@ -9,4 +10,5 @@ build/
 bin/cctangle
 bin/ccweave
 bootstrap/ccweave
+tests/*.tex
 work/

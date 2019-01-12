@@ -6,14 +6,31 @@
 main :: IO ()
 main = do
   opts <- O.execParser optParser
-  logM (logLevel opts) Debug "* Command line options:"
-  logM (logLevel opts) Debug (PP.render (pretty opts))
+  logM (logLevel opts) Info $ "This is CCWEAVE"
 
   (ingested, doc) <- readOrgFile (logLevel opts) (inputFile opts)
   logM (logLevel opts) Debug $ PP.render (pretty ingested)
   logM (logLevel opts) Debug $ PP.render (pretty doc)
 
-  putStrLn (weave doc)
+  let xref = <<Partition a document into source block-defining sections>> $ doc
+           :: [(SourceBlockId, [Section])]
+      texFile = F.replaceExtension (inputFile opts) "tex"
+      idxFile = F.replaceExtension (inputFile opts) "idx"
+      scnFile = F.replaceExtension (inputFile opts) "scn"
+  <<List =CCWEAVE= input and output files>>
+
+  let tex = fst $ runState (weave doc) WeaveState { backReferences = Map.empty }
+  if dryRun opts
+    then logM (logLevel opts) Info tex
+    else do
+      F.fileExist texFile >>= (`when` F.removeLink texFile)
+      writeFile texFile tex
+
+      F.fileExist idxFile >>= (`when` F.removeLink idxFile)
+      writeFile idxFile []
+
+      F.fileExist scnFile >>= (`when` F.removeLink scnFile)
+      <<Write =scn= file>>
   where
     optParser = O.info (userOptionParser <**> O.helper)
       ( O.fullDesc
@@ -23,43 +40,66 @@ main = do
 <<Weaver>>
 #+END_SRC
 
+#+NAME: List =CCWEAVE= input and output files
+#+BEGIN_SRC haskell
+when (listOutputFiles opts) $ mapM_ putStrLn [texFile, idxFile, scnFile]
+when (listInputFiles opts)  $ mapM_ putStrLn (
+  nub . sort .
+  map (\(OrgLine p _) -> P.sourceName p) $ (toList ingested)
+  )
+#+END_SRC
+
 #+NAME: Weaver
 #+BEGIN_SRC haskell
+data WeaveState = WeaveState
+  { backReferences :: Map.Map SourceBlockId [Section]
+  }
+#+END_SRC
+
+#+NAME: Weaver
+#+BEGIN_SRC haskell
+type Weaver a = State WeaveState a
+
 class Weave a where
-  weave :: a -> String
+  weave :: a -> Weaver String
 #+END_SRC
 
 #+NAME: Weaver
 #+BEGIN_SRC haskell
 instance Weave Char where
-  weave '&' = "{\\AM}"
-  weave '\\' = "{\\BS}"
-  weave '{' = "{\\LB}"
-  weave '}' = "{\\RB}"
-  weave '~' = "{\\TL}"
-  weave '_' = "{\\UL}"
-  weave '^' = "{\\CF}"
-  weave '#' = "{\\#}"
-  weave '$' = "{\\$}"
-  weave '%' = "{\\%}"
-  weave c = [c]
+  weave '&' = return "{\\AM}"
+  weave '\\' = return "{\\BS}"
+  weave '{' = return "{\\LB}"
+  weave '}' = return "{\\RB}"
+  weave '~' = return "{\\TL}"
+  weave '_' = return "{\\UL}"
+  weave '^' = return "{\\CF}"
+  weave '#' = return "{\\#}"
+  weave '$' = return "{\\$}"
+  weave '%' = return "{\\%}"
+  weave c = return [c]
 #+END_SRC
 
 #+NAME: Weaver
 #+BEGIN_SRC haskell
 instance Weave TextElement where
-  weave (Plain s) = s
-  weave (Bold s) = concat ["{\\bf ", s, "}"]
-  weave (Italics s) = concat ["{\\it ", s, "\\/}"]
-  weave (InlineCode s) = "\\hbox{\\tenex " ++ concatMap weave s ++ "}"
-  weave (Verbatim s) = "\\hbox{\\tenex " ++ concatMap weave s ++ "}"
-  weave (StrikeThrough _) = error $ "not implemented: StrikeThrough"
+  weave = \case
+    (Plain s) -> concatMapM weave s
+    (Bold s) -> between "{\\bf " "}" <$> concatMapM weave s
+    (Italics s) -> between "{\\it " "\\/}" <$> concatMapM weave s
+    (InlineCode s) -> between "\\hbox{\\tenex " "}" <$> concatMapM weave s
+    (Verbatim s) -> between "\\hbox{\\tenex " "}" <$> concatMapM weave s
+    (StrikeThrough _) -> error $ "not implemented: StrikeThrough"
+    where between before after s = before <> s <> after
+
+concatMapM :: Monad m => (a -> m [b]) -> [a] -> m [b]
+concatMapM f as = concat <$> mapM f as
 #+END_SRC
 
 #+NAME: Weaver
 #+BEGIN_SRC haskell
 instance Weave Text where
-  weave (Text ts) = concatMap weave ts
+  weave (Text ts) = concat <$> mapM weave ts
 #+END_SRC
 
 The =\fi= at the end is necessary to balance out conditionals opened
@@ -68,17 +108,19 @@ by the =cwebmac= macros issued at every section.
 #+NAME: Weaver
 #+BEGIN_SRC haskell
 instance Weave Section where
-  weave s = unlines (header : text) ++ code ++ "\\fi\n"
+  weave s = do
+    text <- mapM weave (sectionDocumentation s)
+    header <- concat <$>
+             case sectionHeadline s of
+               Nothing -> return [ "\\M{", show (sectionNumber s), "}"]
+               Just (Headline d t) -> do
+                 title <- weave t
+                 return [ "\\N{", show d, "}"
+                        , "{", show (sectionNumber s), "}"
+                        , title, "."
+                        ]
+    return $ unlines (header : text) ++ code ++ "\\fi\n"
     where
-      text = map weave (sectionDocumentation s)
-      header = concat $
-        case sectionHeadline s of
-          Nothing -> [ "\\M{", show (sectionNumber s), "}"]
-          Just (Headline d t) ->
-            [ "\\N{", show d, "}"
-            , "{", show (sectionNumber s), "}"
-            , weave t, "."
-            ]
       code = concat $
         case sectionSourceBlock s of
           Nothing -> []
@@ -88,11 +130,20 @@ instance Weave Section where
 #+NAME: Weaver
 #+BEGIN_SRC haskell
 instance Weave Document where
-  weave doc =
-    unlines [ "\\input cwebmac"
-            , concatMap weave (orgSections doc)
-            , "\\inx"
-            , "\\fin"
-            , "\\con"
-            ]
+  weave doc = do
+    secs <- concat <$> mapM weave (orgSections doc)
+    return $ unlines
+      [ "\\input cwebmac"
+      , secs
+      , "\\inx"
+      , "\\fin"
+      , "\\con"
+      ]
+#+END_SRC
+
+
+#+NAME: Write =scn= file
+#+BEGIN_SRC haskell
+do
+  writeFile scnFile []
 #+END_SRC

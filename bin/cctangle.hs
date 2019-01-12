@@ -17,7 +17,7 @@ import Debug.Trace (trace)
 import qualified Data.Map as Map
 import GHC.Exts (IsList(..), groupWith, sortWith)
 import Network.HostName (getHostName)
-{-# LINE 389 "org/tangle.org" #-}
+{-# LINE 388 "org/tangle.org" #-}
 import qualified System.Directory as D
 import qualified System.Environment as Env
 import qualified System.FilePath as F
@@ -120,6 +120,8 @@ sourceBlockId block = case headerArg ":tangle" block of
     Just (Atom f) -> Just $ FileBlock f
     Just (YesNo _) -> Nothing
     Just e -> error $ "unsupported tangle destination: " ++ show e
+{-# LINE 120 "org/doc.org" #-}
+type DocumentPartition = [(SourceBlockId,[Section])]
 {-# LINE 133 "ccweb.org" #-}
 class Pretty a where
   pretty :: a -> PP.Doc
@@ -954,7 +956,7 @@ dryRunParser = O.switch
 main :: IO ()
 main = do
   opts <- O.execParser optParser
-  logM (logLevel opts) Info $ "This is CCWEB"
+  logM (logLevel opts) Info $ "This is CCTANGLE"
 
 {-# LINE 15 "org/tangle.org" #-}
   (ingested, doc) <- readOrgFile (logLevel opts) (inputFile opts)
@@ -970,11 +972,11 @@ main = do
                . (map (\(f,ss) -> (f, map (fromJust . sectionSourceBlock) ss))
                   :: [(FilePath, [Section])] -> [(FilePath, [SourceBlock])])
                . (mapMaybe (\(i,ss) -> case i of; (FileBlock f) -> Just (f,ss); _ -> Nothing)
-                  :: [(SourceBlockId, [Section])] -> [(FilePath, [Section])])
+                  :: DocumentPartition -> [(FilePath, [Section])])
                . (
-{-# LINE 120 "org/doc.org" #-}
+{-# LINE 125 "org/doc.org" #-}
                   (map (\bs -> (fst (head bs), map snd bs))
-                       :: [[(SourceBlockId, Section)]] -> [(SourceBlockId,[Section])])
+                       :: [[(SourceBlockId, Section)]] -> DocumentPartition)
                     . (groupWith fst
                        :: [(SourceBlockId, Section)] -> [[(SourceBlockId, Section)]])
                     . (sortWith fst
@@ -983,7 +985,7 @@ main = do
                        :: [Section] -> [(SourceBlockId, Section)])
                     . orgSections
 {-# LINE 45 "org/tangle.org" #-}
-                  :: Document -> [(SourceBlockId, [Section])])
+                  :: Document -> DocumentPartition)
                $ doc
 {-# LINE 20 "org/tangle.org" #-}
                      :: [(FilePath, [SourceBlock])]
@@ -1180,11 +1182,10 @@ tangleFile opts doc (fp, bs) = do
       when (mkDir && dir /= ".") $ D.createDirectoryIfMissing True dir
 
 {-# LINE 372 "org/tangle.org" #-}
-      exists <- F.fileExist fp
-      when exists $ F.removeLink fp
+      F.fileExist fp >>= (`when` F.removeLink fp)
+      writeFile fp contents
 
 {-# LINE 375 "org/tangle.org" #-}
-      writeFile fp contents
       case headerArg ":tangle-mode" block of
         Nothing -> return ()
         Just expr -> do

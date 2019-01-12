@@ -115,10 +115,15 @@ sourceBlockId block = case headerArg ":tangle" block of
     Just e -> error $ "unsupported tangle destination: " ++ show e
 #+END_SRC
 
+#+NAME: Document data model
+#+BEGIN_SRC haskell
+type DocumentPartition = [(SourceBlockId,[Section])]
+#+END_SRC
+
 #+NAME: Partition a document into source block-defining sections
 #+BEGIN_SRC haskell
 (map (\bs -> (fst (head bs), map snd bs))
-     :: [[(SourceBlockId, Section)]] -> [(SourceBlockId,[Section])])
+     :: [[(SourceBlockId, Section)]] -> DocumentPartition)
   . (groupWith fst
      :: [(SourceBlockId, Section)] -> [[(SourceBlockId, Section)]])
   . (sortWith fst
