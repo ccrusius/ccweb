@@ -122,7 +122,7 @@ sourceBlockId block = case headerArg ":tangle" block of
     Just (YesNo _) -> Nothing
     Just e -> error $ "unsupported tangle destination: " ++ show e
 {-# LINE 121 "org/doc.org" #-}
-type DocumentPartition = [(SourceBlockId,[Section])]
+type DocumentPartition = Map.Map SourceBlockId [Section]
 {-# LINE 133 "ccweb.org" #-}
 class Pretty a where
   pretty :: a -> PP.Doc
@@ -969,9 +969,9 @@ main = do
   logM (logLevel opts) Debug $ PP.render (pretty doc)
 
 {-# LINE 15 "org/weave.org" #-}
-  let xref = 
+  let part = 
 {-# LINE 126 "org/doc.org" #-}
-             (map (\bs -> (fst (head bs), map snd bs))
+             ((Map.fromList . map (\bs -> (fst (head bs), map snd bs)))
                   :: [[(SourceBlockId, Section)]] -> DocumentPartition)
                . (groupWith fst
                   :: [(SourceBlockId, Section)] -> [[(SourceBlockId, Section)]])
@@ -982,11 +982,11 @@ main = do
                . orgSections
 {-# LINE 15 "org/weave.org" #-}
                              $ doc
-           :: [(SourceBlockId, [Section])]
+           :: DocumentPartition
       texFile = F.replaceExtension (inputFile opts) "tex"
       idxFile = F.replaceExtension (inputFile opts) "idx"
       scnFile = F.replaceExtension (inputFile opts) "scn"
-{-# LINE 45 "org/weave.org" #-}
+{-# LINE 48 "org/weave.org" #-}
   when (listOutputFiles opts) $ mapM_ putStrLn [texFile, idxFile, scnFile]
   when (listInputFiles opts)  $ mapM_ putStrLn (
     nub . sort .
@@ -995,40 +995,44 @@ main = do
 {-# LINE 20 "org/weave.org" #-}
 
 {-# LINE 22 "org/weave.org" #-}
-  let tex = fst $ runState (weave doc) WeaveState { backReferences = Map.empty }
+  let tex = fst $ runState (weave doc)
+        WeaveState { backReferences = Map.empty
+                   , docPartition = part
+                   }
   if dryRun opts
     then logM (logLevel opts) Info tex
     else do
       F.fileExist texFile >>= (`when` F.removeLink texFile)
       writeFile texFile tex
 
-{-# LINE 29 "org/weave.org" #-}
+{-# LINE 32 "org/weave.org" #-}
       F.fileExist idxFile >>= (`when` F.removeLink idxFile)
       writeFile idxFile []
 
-{-# LINE 32 "org/weave.org" #-}
+{-# LINE 35 "org/weave.org" #-}
       F.fileExist scnFile >>= (`when` F.removeLink scnFile)
-{-# LINE 148 "org/weave.org" #-}
+{-# LINE 198 "org/weave.org" #-}
       do
         writeFile scnFile []
-{-# LINE 34 "org/weave.org" #-}
+{-# LINE 37 "org/weave.org" #-}
   where
     optParser = O.info (userOptionParser <**> O.helper)
       ( O.fullDesc
       <> O.progDesc "Weave the input FILE"
       <> O.header "ccweave - A literate programming weaver" )
 
-{-# LINE 54 "org/weave.org" #-}
+{-# LINE 57 "org/weave.org" #-}
 data WeaveState = WeaveState
   { backReferences :: Map.Map SourceBlockId [Section]
+  , docPartition :: DocumentPartition
   }
-{-# LINE 61 "org/weave.org" #-}
+{-# LINE 65 "org/weave.org" #-}
 type Weaver a = State WeaveState a
 
-{-# LINE 63 "org/weave.org" #-}
+{-# LINE 67 "org/weave.org" #-}
 class Weave a where
   weave :: a -> Weaver String
-{-# LINE 69 "org/weave.org" #-}
+{-# LINE 73 "org/weave.org" #-}
 instance Weave Char where
   weave '&' = return "{\\AM}"
   weave '\\' = return "{\\BS}"
@@ -1041,7 +1045,7 @@ instance Weave Char where
   weave '$' = return "{\\$}"
   weave '%' = return "{\\%}"
   weave c = return [c]
-{-# LINE 85 "org/weave.org" #-}
+{-# LINE 89 "org/weave.org" #-}
 instance Weave TextElement where
   weave = \case
     (Plain s) -> concatMapM weave s
@@ -1053,32 +1057,74 @@ instance Weave TextElement where
     (TeXMath s) -> return $ between "$" "$" s
     where between before after s = before <> s <> after
 
-{-# LINE 96 "org/weave.org" #-}
+{-# LINE 100 "org/weave.org" #-}
 concatMapM :: Monad m => (a -> m [b]) -> [a] -> m [b]
 concatMapM f as = concat <$> mapM f as
-{-# LINE 102 "org/weave.org" #-}
+{-# LINE 106 "org/weave.org" #-}
 instance Weave Text where
   weave (Text ts) = concat <$> mapM weave ts
-{-# LINE 111 "org/weave.org" #-}
+{-# LINE 115 "org/weave.org" #-}
 instance Weave Section where
   weave s = do
-    text <- mapM weave (sectionDocumentation s)
-    header <- concat <$>
-             case sectionHeadline s of
-               Nothing -> return [ "\\M{", show (sectionNumber s), "}"]
-               Just (Headline d t) -> do
-                 title <- weave t
-                 return [ "\\N{", show d, "}"
-                        , "{", show (sectionNumber s), "}"
-                        , title, "."
-                        ]
-    return $ unlines (header : text) ++ code ++ "\\fi\n"
-    where
-      code = concat $
-        case sectionSourceBlock s of
-          Nothing -> []
-          Just _ -> [ "\\X", ":", "\\X", "${}", "\\equiv{}$\n" ]
-{-# LINE 133 "org/weave.org" #-}
+    header <- (
+{-# LINE 125 "org/weave.org" #-}
+               do
+                 concat <$>
+                   case sectionHeadline s of
+                     Nothing ->
+                       return [ "\\M{", show (sectionNumber s), "}"]
+                     Just (Headline d t) -> do
+                       title <- weave t :: Weaver String
+                       return [ "\\N{", show d, "}"
+                              , "{", show (sectionNumber s), "}"
+                              , title, "."
+                              ]
+{-# LINE 117 "org/weave.org" #-}
+                               ) :: Weaver String
+    text <- (
+{-# LINE 140 "org/weave.org" #-}
+             mapM weave (sectionDocumentation s)
+{-# LINE 118 "org/weave.org" #-}
+                                                ) :: Weaver [String]
+    code <- (
+{-# LINE 145 "org/weave.org" #-}
+             case sectionSourceBlock s of
+               Nothing -> return []
+               Just b -> do
+                 part <- docPartition <$> get
+                 let id = sourceBlockId b
+                     sections = (Map.!) part <$> id
+                     firstNo = sectionNumber . head <$> sections
+                     secno = sectionNumber s
+                 n <- (
+{-# LINE 167 "org/weave.org" #-}
+                       \ref -> do
+                         tangledName <- case sourceBlockId b of
+                           Nothing -> return "$\\bullet$"
+                           Just (FileBlock file) -> ("$\\Rightarrow\\,$" ++) <$> weave (Verbatim file)
+                           Just (NamedBlock name) -> weave name
+                         return . concat $
+                           [ "\\X"
+                           , show . fromMaybe 9999 $ firstNo
+                           , ":"
+                           , tangledName
+                           , "\\X"
+                           ]
+{-# LINE 153 "org/weave.org" #-}
+                            ) s :: Weaver String
+                 let head = concat
+                       [ if null text then [] else "\\Y"
+                       , "\\B\\4"
+                       , n
+                       , "${}"
+                       , if secno == fromMaybe 0 firstNo then [] else "\\mathrel+"
+                       , "\\equiv{}$"
+                       ]
+                 return $ head : []
+{-# LINE 119 "org/weave.org" #-}
+                                   ) :: Weaver [String]
+    return $ unlines (header : text) ++ unlines code ++ "\\fi\n"
+{-# LINE 183 "org/weave.org" #-}
 instance Weave Document where
   weave doc = do
     secs <- concat <$> mapM weave (orgSections doc)
@@ -1089,4 +1135,4 @@ instance Weave Document where
       , "\\fin"
       , "\\con"
       ]
-{-# LINE 40 "org/weave.org" #-}
+{-# LINE 43 "org/weave.org" #-}

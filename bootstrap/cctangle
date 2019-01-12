@@ -136,7 +136,7 @@ sourceBlockId block = case headerArg ":tangle" block of
     Just (YesNo _) -> Nothing
     Just e -> error $ "unsupported tangle destination: " ++ show e
 {-# LINE 121 "org/doc.org" #-}
-type DocumentPartition = [(SourceBlockId,[Section])]
+type DocumentPartition = Map.Map SourceBlockId [Section]
 {-# LINE 133 "ccweb.org" #-}
 class Pretty a where
   pretty :: a -> PP.Doc
@@ -988,11 +988,11 @@ main = do
                   :: [(FilePath, [SourceBlock])] -> [(FilePath, [SourceBlock])])
                . (map (\(f,ss) -> (f, map (fromJust . sectionSourceBlock) ss))
                   :: [(FilePath, [Section])] -> [(FilePath, [SourceBlock])])
-               . (mapMaybe (\(i,ss) -> case i of; (FileBlock f) -> Just (f,ss); _ -> Nothing)
+               . (mapMaybe (\(i,ss) -> case i of; (FileBlock f) -> Just (f,ss); _ -> Nothing) . toList
                   :: DocumentPartition -> [(FilePath, [Section])])
                . (
 {-# LINE 126 "org/doc.org" #-}
-                  (map (\bs -> (fst (head bs), map snd bs))
+                  ((Map.fromList . map (\bs -> (fst (head bs), map snd bs)))
                        :: [[(SourceBlockId, Section)]] -> DocumentPartition)
                     . (groupWith fst
                        :: [(SourceBlockId, Section)] -> [[(SourceBlockId, Section)]])

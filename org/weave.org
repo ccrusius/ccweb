@@ -12,14 +12,17 @@ main = do
   logM (logLevel opts) Debug $ PP.render (pretty ingested)
   logM (logLevel opts) Debug $ PP.render (pretty doc)
 
-  let xref = <<Partition a document into source block-defining sections>> $ doc
-           :: [(SourceBlockId, [Section])]
+  let part = <<Partition a document into source block-defining sections>> $ doc
+           :: DocumentPartition
       texFile = F.replaceExtension (inputFile opts) "tex"
       idxFile = F.replaceExtension (inputFile opts) "idx"
       scnFile = F.replaceExtension (inputFile opts) "scn"
   <<List =CCWEAVE= input and output files>>
 
-  let tex = fst $ runState (weave doc) WeaveState { backReferences = Map.empty }
+  let tex = fst $ runState (weave doc)
+        WeaveState { backReferences = Map.empty
+                   , docPartition = part
+                   }
   if dryRun opts
     then logM (logLevel opts) Info tex
     else do
@@ -53,6 +56,7 @@ when (listInputFiles opts)  $ mapM_ putStrLn (
 #+BEGIN_SRC haskell
 data WeaveState = WeaveState
   { backReferences :: Map.Map SourceBlockId [Section]
+  , docPartition :: DocumentPartition
   }
 #+END_SRC
 
@@ -110,22 +114,68 @@ by the =cwebmac= macros issued at every section.
 #+BEGIN_SRC haskell
 instance Weave Section where
   weave s = do
-    text <- mapM weave (sectionDocumentation s)
-    header <- concat <$>
-             case sectionHeadline s of
-               Nothing -> return [ "\\M{", show (sectionNumber s), "}"]
-               Just (Headline d t) -> do
-                 title <- weave t
-                 return [ "\\N{", show d, "}"
-                        , "{", show (sectionNumber s), "}"
-                        , title, "."
-                        ]
-    return $ unlines (header : text) ++ code ++ "\\fi\n"
-    where
-      code = concat $
-        case sectionSourceBlock s of
-          Nothing -> []
-          Just _ -> [ "\\X", ":", "\\X", "${}", "\\equiv{}$\n" ]
+    header <- (<<Weave section ~s~ headline>>) :: Weaver String
+    text <- (<<Weave section ~s~ body>>) :: Weaver [String]
+    code <- (<<Weave section ~s~ code>>) :: Weaver [String]
+    return $ unlines (header : text) ++ unlines code ++ "\\fi\n"
+#+END_SRC
+
+#+NAME: Weave section ~s~ headline
+#+BEGIN_SRC haskell
+do
+  concat <$>
+    case sectionHeadline s of
+      Nothing ->
+        return [ "\\M{", show (sectionNumber s), "}"]
+      Just (Headline d t) -> do
+        title <- weave t :: Weaver String
+        return [ "\\N{", show d, "}"
+               , "{", show (sectionNumber s), "}"
+               , title, "."
+               ]
+#+END_SRC
+
+#+NAME: Weave section ~s~ body
+#+BEGIN_SRC haskell
+mapM weave (sectionDocumentation s)
+#+END_SRC
+
+#+NAME: Weave section ~s~ code
+#+BEGIN_SRC haskell
+case sectionSourceBlock s of
+  Nothing -> return []
+  Just b -> do
+    part <- docPartition <$> get
+    let id = sourceBlockId b
+        sections = (Map.!) part <$> id
+        firstNo = sectionNumber . head <$> sections
+        secno = sectionNumber s
+    n <- (<<Weave section reference>>) s :: Weaver String
+    let head = concat
+          [ if null text then [] else "\\Y"
+          , "\\B\\4"
+          , n
+          , "${}"
+          , if secno == fromMaybe 0 firstNo then [] else "\\mathrel+"
+          , "\\equiv{}$"
+          ]
+    return $ head : []
+#+END_SRC
+
+#+NAME: Weave section reference
+#+BEGIN_SRC haskell
+\ref -> do
+  tangledName <- case sourceBlockId b of
+    Nothing -> return "$\\bullet$"
+    Just (FileBlock file) -> ("$\\Rightarrow\\,$" ++) <$> weave (Verbatim file)
+    Just (NamedBlock name) -> weave name
+  return . concat $
+    [ "\\X"
+    , show . fromMaybe 9999 $ firstNo
+    , ":"
+    , tangledName
+    , "\\X"
+    ]
 #+END_SRC
 
 #+NAME: Weaver

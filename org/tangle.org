@@ -39,7 +39,7 @@ blocks. Included here is the expansion of the user's home directory.
      :: [(FilePath, [SourceBlock])] -> [(FilePath, [SourceBlock])])
   . (map (\(f,ss) -> (f, map (fromJust . sectionSourceBlock) ss))
      :: [(FilePath, [Section])] -> [(FilePath, [SourceBlock])])
-  . (mapMaybe (\(i,ss) -> case i of; (FileBlock f) -> Just (f,ss); _ -> Nothing)
+  . (mapMaybe (\(i,ss) -> case i of; (FileBlock f) -> Just (f,ss); _ -> Nothing) . toList
      :: DocumentPartition -> [(FilePath, [Section])])
   . (<<Partition a document into source block-defining sections>>
      :: Document -> DocumentPartition)
