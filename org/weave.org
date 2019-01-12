@@ -90,6 +90,7 @@ instance Weave TextElement where
     (InlineCode s) -> between "\\hbox{\\tentex " "}" <$> concatMapM weave s
     (Verbatim s) -> between "\\hbox{\\tentex " "}" <$> concatMapM weave s
     (StrikeThrough _) -> error $ "not implemented: StrikeThrough"
+    (TeXMath s) -> return $ between "$" "$" s
     where between before after s = before <> s <> after
 
 concatMapM :: Monad m => (a -> m [b]) -> [a] -> m [b]

@@ -620,6 +620,7 @@ instance Pretty TextElement where
   pretty (Italics a) = PP.text "Italics:" PP.<+> pretty a
   pretty (Plain a) = pretty a
   pretty (StrikeThrough a) = PP.text "StrikeThrough:" PP.<+> pretty a
+  pretty (TeXMath a) = PP.text "TeXMath:" PP.<+> pretty a
   pretty (Verbatim a) = PP.text "Verbatim:" PP.<+> pretty a
 #+END_SRC
 
@@ -635,6 +636,7 @@ P.try (Bold <$> enclosed '*')
 <|> P.try (InlineCode <$> enclosed '~')
 <|> P.try (Italics <$> enclosed '/')
 <|> P.try (StrikeThrough <$> enclosed '+')
+<|> P.try (TeXMath <$> enclosed '$')
 <|> P.try (Verbatim <$> enclosed '=')
 #+END_SRC
 

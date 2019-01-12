@@ -43,6 +43,7 @@ data TextElement =
   | Italics String
   | Plain String
   | StrikeThrough String
+  | TeXMath String
   | Verbatim String
   deriving (Eq, Ord, Show)
 #+END_SRC
