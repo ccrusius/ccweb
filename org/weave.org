@@ -87,8 +87,8 @@ instance Weave TextElement where
     (Plain s) -> concatMapM weave s
     (Bold s) -> between "{\\bf " "}" <$> concatMapM weave s
     (Italics s) -> between "{\\it " "\\/}" <$> concatMapM weave s
-    (InlineCode s) -> between "\\hbox{\\tenex " "}" <$> concatMapM weave s
-    (Verbatim s) -> between "\\hbox{\\tenex " "}" <$> concatMapM weave s
+    (InlineCode s) -> between "\\hbox{\\tentex " "}" <$> concatMapM weave s
+    (Verbatim s) -> between "\\hbox{\\tentex " "}" <$> concatMapM weave s
     (StrikeThrough _) -> error $ "not implemented: StrikeThrough"
     where between before after s = before <> s <> after
 

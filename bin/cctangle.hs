@@ -785,9 +785,9 @@ instance Parse Section where
 
 {-# LINE 1060 "ccweb.org" #-}
     state <- P.getState
-    let n = sectionCounter state
+    let n = 1 + sectionCounter state
         ps' = top . propertyStack $ state
-    P.updateState (\s -> s{ sectionCounter = 1 + n })
+    P.updateState (\s -> s{ sectionCounter = n })
     return Section
       { sectionNumber = n
       , sectionHeadline = h

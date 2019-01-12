@@ -1,12 +1,12 @@
 *.dvi
 *.out
+*.pdf
 *.swp
 *.log
 *.toc
 *.idx
 *.scn
-bin/ccweb.tex
-build/
+*.tex
 bin/cctangle
 bin/ccweave
 bootstrap/ccweave

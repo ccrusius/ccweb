@@ -1058,9 +1058,9 @@ instance Parse Section where
     parserTrace "end of section parsing"
 
     state <- P.getState
-    let n = sectionCounter state
+    let n = 1 + sectionCounter state
         ps' = top . propertyStack $ state
-    P.updateState (\s -> s{ sectionCounter = 1 + n })
+    P.updateState (\s -> s{ sectionCounter = n })
     return Section
       { sectionNumber = n
       , sectionHeadline = h
