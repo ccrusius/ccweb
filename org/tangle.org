@@ -1,7 +1,7 @@
 * The Tangler
 
 #+BEGIN_SRC haskell :tangle "bin/cctangle.hs" :tangle-mode (identity #o444)
-<<Common-ccweb-code>>
+<<Common =CCWEB= code>>
 <<Tangler>>
 #+END_SRC
 
@@ -22,6 +22,7 @@ main = do
   logM (logLevel opts) Debug $ PP.render (pretty outs)
 
   mapM_ (tangleFile opts doc) outs
+  logM (logLevel opts) Info $ "Done."
   where
     optParser = O.info (userOptionParser <**> O.helper)
       ( O.fullDesc
@@ -188,7 +189,7 @@ maybeAddLinePragma ls pos block = do
   lang <- pragmaLanguage <$> get
   let pragma = LinePragma lang pos
   return $ case (headerArg ":comments" block, show pragma) of
-    (Just (YesNo True), (_:_)) -> pragma : ls
+    (Just (BoolAtom True), (_:_)) -> pragma : ls
     _ -> ls
 #+END_SRC
 
@@ -330,7 +331,7 @@ filter (\b -> case (blockName b) of
                Nothing -> False
                Just t -> t == name)
   . mapMaybe sectionSourceBlock
-  . orgSections
+  . sections
   . document
   <$> get
 #+END_SRC
@@ -362,7 +363,7 @@ tangleFile opts doc (fp, bs) = do
            )
            bs
       contents = concatMap show $ <<Remove redundant line pragmas>> ls
-  logM (logLevel opts) Info $ "Writing the output file (" ++ fp ++ ")"
+  logM (logLevel opts) Info $ "Writing the output file (" ++ fp ++ ")..."
   if dryRun opts
     then logM (logLevel opts) Info contents
     else do
@@ -374,12 +375,11 @@ tangleFile opts doc (fp, bs) = do
 
       case headerArg ":tangle-mode" block of
         Nothing -> return ()
-        Just expr -> do
-          let mode = fileMode expr
-          F.setFileMode fp mode
+        Just (IntAtom mode) -> F.setFileMode fp $ fromIntegral mode
+        Just e -> error $ "unsupported tangle-mode: " ++ show e
   where
     mkDir = case headerArg ":mkdirp" (head bs) of
-              Just (YesNo x) -> x
+              Just (BoolAtom x) -> x
               _ -> False
 #+END_SRC
 
@@ -389,7 +389,6 @@ import qualified System.Directory as D
 import qualified System.Environment as Env
 import qualified System.FilePath as F
 import qualified System.Posix.Files as F
-import qualified System.Posix.Types as F
 #+END_SRC
 
 #+NAME: stack-packages

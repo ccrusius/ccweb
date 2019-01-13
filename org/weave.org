@@ -1,7 +1,7 @@
 * The Weaver
 
 #+BEGIN_SRC haskell :tangle "bin/ccweave.hs" :tangle-mode (identity #o444)
-<<Common-ccweb-code>>
+<<Common =CCWEB= code>>
 
 main :: IO ()
 main = do
@@ -26,14 +26,18 @@ main = do
   if dryRun opts
     then logM (logLevel opts) Info tex
     else do
+      logM (logLevel opts) Info $ "Writing the output file..."
       F.fileExist texFile >>= (`when` F.removeLink texFile)
       writeFile texFile tex
 
+      logM (logLevel opts) Info $ "Writing the index..."
       F.fileExist idxFile >>= (`when` F.removeLink idxFile)
       writeFile idxFile []
 
       F.fileExist scnFile >>= (`when` F.removeLink scnFile)
       <<Write =scn= file>>
+
+      logM (logLevel opts) Info $ "Done."
   where
     optParser = O.info (userOptionParser <**> O.helper)
       ( O.fullDesc
@@ -54,7 +58,7 @@ when (listInputFiles opts)  $ mapM_ putStrLn (
 
 #+NAME: Get list of blocks referenced in document
 #+BEGIN_SRC haskell
-map (<<Get list of blocks referenced by section>>) . orgSections
+map (<<Get list of blocks referenced by section>>) . sections
 :: Document -> [(Section,[SourceBlockId])]
 #+END_SRC
 
@@ -163,7 +167,7 @@ do
 
 #+NAME: Weave section ~s~ body
 #+BEGIN_SRC haskell
-mapM weave (sectionDocumentation s)
+mapM weave (documentation s)
 #+END_SRC
 
 #+NAME: Weave section ~s~ code
@@ -228,7 +232,7 @@ instance Weave SourceBlockId where
 #+BEGIN_SRC haskell
 instance Weave Document where
   weave doc = do
-    secs <- concat <$> mapM weave (orgSections doc)
+    secs <- concat <$> mapM weave (sections doc)
     return $ unlines
       [ "\\input cwebmac"
       , secs

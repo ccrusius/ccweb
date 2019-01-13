@@ -24,7 +24,7 @@ certain structure that mimics what you would find in a =CWEB= file.
 
 * Main Sections
 
-#+NAME: Common-ccweb-code
+#+NAME: Common =CCWEB= code
 #+BEGIN_SRC haskell
 <<Language-features>>
 <<Imports>>
@@ -181,6 +181,9 @@ instance Pretty PrettyStruct where
   pretty (PrettyStruct t ps) =
     let fields = map (\(n,p) -> PP.text n PP.<> PP.colon PP.<+> p) ps
     in PP.text t PP.<> PP.braces (PP.fcat $ PP.punctuate PP.comma fields)
+
+prettyStruct :: String -> [(String, (a -> PP.Doc))] -> a -> PP.Doc
+prettyStruct name kfs a = pretty (PrettyStruct name (map (\(k,f) -> (k,f a)) kfs))
 #+END_SRC
 
 #+NAME: Pretty printing
@@ -232,7 +235,8 @@ import qualified Options.Applicative as O
 #+NAME: Command-line-options
 #+BEGIN_SRC haskell
 data Options = Options
-  { logLevel :: LogLevel
+  { optionQuiet :: Bool
+  , optionVerbosity :: Int
   , dryRun :: Bool
   , listInputFiles :: Bool
   , listOutputFiles :: Bool
@@ -241,7 +245,8 @@ data Options = Options
 
 instance Pretty Options where
   pretty o = pretty $ PrettyStruct "Options"
-    [ ("log level", pretty $ logLevel o)
+    [ ("quiet", pretty $ optionQuiet o)
+    , ("verbosity", pretty $ optionVerbosity o)
     , ("dry-run", pretty $ dryRun o)
     , ("list-input-files", pretty $ listInputFiles o)
     , ("list-output-files", pretty $ listOutputFiles o)
@@ -250,42 +255,46 @@ instance Pretty Options where
 
 userOptionParser :: O.Parser Options
 userOptionParser = Options
-  <$> <<Parse log level command line flags>>
+  <$> (<<Parse the =-q= user flag>>)
+  <*> (<<Parse the =-v= user flag>>)
   <*> dryRunParser
   <*> <<The =-I= command line flag>>
   <*> <<The =-O= command line flag>>
   <*> (<<Parse input file name>>)
 #+END_SRC
 
-#+NAME: Parse log level command line flags
+#+NAME: Command-line-options
 #+BEGIN_SRC haskell
-((<<=-v= flag parsing>>) <|> (<<=-q= flag parsing>>))
+logLevel :: Options -> LogLevel
+logLevel Options{ optionQuiet = q, optionVerbosity = v } =
+  case (if q then 0 else 3) + v of
+    0 -> Quiet
+    1 -> Error
+    2 -> Warning
+    3 -> Info
+    4 -> Debug
+    _ -> Trace
 #+END_SRC
 
-#+NAME: =-v= flag parsing
+#+NAME: Parse the =-q= user flag
 #+BEGIN_SRC haskell
-(\vs -> case length vs of
-         0 -> Error
-         1 -> Warning
-         2 -> Info
-         3 -> Debug
-         _ -> Trace)
+O.switch
+  ( O.short 'q'
+    <> O.long "quiet"
+    <> O.help "Only print things that were asked for."
+  )
+#+END_SRC
+
+#+NAME: Parse the =-v= user flag
+#+BEGIN_SRC haskell
+length
 <$>
-O.some
+O.many
   ( O.flag' ()
     ( O.short 'v'
       <> O.long "verbose"
       <> O.help "Be verbose. Can be given multiple times for more verbosity."
     ))
-#+END_SRC
-
-#+NAME: =-q= flag parsing
-#+BEGIN_SRC haskell
-O.flag Warning Quiet
-  ( O.short 'q'
-    <> O.long "quiet"
-    <> O.help "Only print things that were asked for."
-  )
 #+END_SRC
 
 #+NAME: Parse input file name
@@ -720,26 +729,9 @@ instance Parse CodeLine where
 
 ** S-Expressions
 
-Org files can contain s-expressions as header property values. I
-support a small subset of valid s-expressions, so their type is rather
-simple.
-
-#+NAME: Pretty printing
-#+BEGIN_SRC haskell
-instance Show SExpression where
-  show (Atom x) = x
-  show (Series xs) = "(" ++ intercalate " " (map show xs) ++ ")"
-  show (YesNo x) = show x
-
-instance Pretty SExpression where
-  pretty (Atom x) = PP.text x
-  pretty (Series xs) = PP.parens $ PP.fsep (map pretty xs)
-  pretty (YesNo x) = PP.text (show x)
-#+END_SRC
-
 #+NAME: Parser
 #+BEGIN_SRC haskell
-instance Parse SExpression where
+instance Parse SExpr where
   parse =
     (<<Parse a parenthesized S-expression>>)
     <|>
@@ -750,7 +742,7 @@ instance Parse SExpression where
 
 #+NAME: Parse a parenthesized S-expression
 #+BEGIN_SRC haskell
-Series <$> ( P.try (P.char '(')
+SExpr <$> ( P.try (P.char '(')
              *> spaces
              *> (P.sepEndBy parse spaces1 <* P.char ')')
            )
@@ -758,7 +750,7 @@ Series <$> ( P.try (P.char '(')
 
 #+NAME: Parse a boolean property
 #+BEGIN_SRC haskell
-YesNo <$> (
+BoolAtom <$> (
   (P.string "no" *> P.lookAhead P.space *> return False)
   <|>
   (P.string "yes" *> P.lookAhead P.space *> return True)
@@ -770,65 +762,7 @@ YesNo <$> (
 Atom <$> (enclosed '"' <|> symbol)
 #+END_SRC
 
-I could not avoid evaluating some expressions, namely those used to
-conditionally tangle things depending on the system type. Those are of
-the form
-
-#+BEGIN_SRC emacs-lisp :tangle no
-(when (eq system-type 'gnu/linux) "~/file/name")
-#+END_SRC
-
-Valid =system-type= values include =gnu/linux=, =darwin=, and =windows-nt=.
-
-#+NAME: Parser
-#+BEGIN_SRC haskell
-class Eval a where
-  eval :: ParserState -> a -> a
-
-instance Eval SExpression where
-  eval _ (Series [Atom "eq", Atom "system-type", Atom ('\'':t)]) =
-    YesNo $ case (Sys.os, t) of
-              ("linux", "gnu/linux") -> True
-              ("mingw32", "windows-nt") -> True
-              ("darwin", "darwin") -> True
-              _ -> False
-
-  eval s (Series [Atom "unless", expr, result]) =
-    case eval s expr of
-      YesNo False -> eval s result
-      YesNo True  -> YesNo False
-      expr' -> expr'
-
-  eval s (Series [Atom "when", expr, result]) =
-    case eval s expr of
-      YesNo True -> eval s result
-      expr' -> expr'
-
-  eval s (Series [Atom "system-name"]) =
-    Atom $ hostName s 
-
-  eval s (Series [Atom "string-suffix-p", suffix, expr]) =
-    case (eval s suffix, eval s expr) of
-      (Atom s', Atom str) -> YesNo $ isSuffixOf s' str
-      (e1, e2) -> Series [Atom "string-suffix-p", e1, e2]
-
-  eval _ x = x
-#+END_SRC
-
-#+NAME: Imports
-#+BEGIN_SRC haskell
-import qualified System.Info as Sys
-#+END_SRC
-
 ** Properties
-
-Org properties are key-value pairs assigned to a property name.
-
-#+NAME: Parser
-#+BEGIN_SRC haskell
-instance Eval Property where; eval s = Map.map (eval s)
-instance Eval Properties where; eval s = Map.map (eval s)
-#+END_SRC
 
 #+NAME: Parser
 #+BEGIN_SRC haskell
@@ -858,7 +792,7 @@ line (Map.fromList
 #+BEGIN_SRC haskell
 do
   k <- symbol <* (spaces1 <|> (spaces *> P.char '=' *> spaces))
-  v <- parse :: Parser SExpression
+  v <- parse :: Parser SExpr
   return (k, v)
 #+END_SRC
 
@@ -879,25 +813,7 @@ do
   return (p, kvs)
 #+END_SRC
 
-#+NAME: Parser
-#+BEGIN_SRC haskell
-fileMode :: SExpression -> F.FileMode
-fileMode (Series (Atom "identity" : Atom ('#':'o':a:g:u:[]) : [])) =
-  fromIntegral $ 8 * ((8 * oct a) + oct g) + oct u
-  where oct c = ord c - ord '0'
-fileMode _ = 420
-#+END_SRC
-
 ** Headlines
-
-#+NAME: Pretty printing
-#+BEGIN_SRC haskell
-instance Pretty Headline where
-  pretty (Headline l t) =
-    PP.text "Headline"
-    PP.<> PP.braces (pretty l)
-    PP.<+> pretty t
-#+END_SRC
 
 #+NAME: Parser
 #+BEGIN_SRC haskell
@@ -916,23 +832,6 @@ headlineLevel (Headline x _) = x
 #+END_SRC
 
 ** Code Blocks
-
-#+NAME: Parser
-#+BEGIN_SRC haskell
-#+END_SRC
-
-#+NAME: Pretty printing
-#+BEGIN_SRC haskell
-instance Pretty SourceBlock where
-  pretty s = pretty $ PrettyStruct "SourceBlock"
-               [ ("name", pretty (blockName s))
-               , ("language", pretty (blockLanguage s))
-               , ("properties", pretty (blockProperties s))
-               , ("derived properties", pretty (blockDerivedProperties s))
-               , ("location", pretty (blockLocation s))
-               , ("lines", pretty (blockLines s))
-               ]
-#+END_SRC
 
 #+NAME: Parser
 #+BEGIN_SRC haskell
@@ -1006,25 +905,6 @@ enclosed d = P.try (P.char d) *> P.manyTill anyChar (P.char d)
 
 ** Sections
 
-#+NAME: Pretty printing
-#+BEGIN_SRC haskell
-instance Pretty Section where
-  pretty s = pretty $ PrettyStruct "Section"
-               [ ("number", pretty (sectionNumber s))
-               , ("headline", pretty (sectionHeadline s))
-               , ("properties", pretty (sectionProps s))
-               , ("derived properties", pretty (sectionDerivedProperties s))
-               , ("text", pretty (sectionDocumentation s))
-               , ("code", pretty (sectionSourceBlock s))
-               ]
-#+END_SRC
-
-#+NAME: Parser
-#+BEGIN_SRC haskell
-instance HeaderArgs Section where
-  headerArgs = headerArgs . sectionDerivedProperties
-#+END_SRC
-
 #+NAME: Parser
 #+BEGIN_SRC haskell
 instance Parse Section where
@@ -1068,21 +948,12 @@ instance Parse Section where
       , sectionHeadline = h
       , sectionProps = ps
       , sectionDerivedProperties = eval state ps'
-      , sectionDocumentation = fromMaybe [] ts
+      , documentation = fromMaybe [] ts
       , sectionSourceBlock = c
       }
 #+END_SRC
 
 ** Keywords
-
-#+NAME: Parser
-#+BEGIN_SRC haskell
-instance Pretty Keyword where
-  pretty (AuthorKeyword a) = PP.text "Author:" PP.<+> pretty a
-  pretty (PropertyKeyword a) = PP.text "Property:" PP.<+> pretty a
-  pretty (TitleKeyword a) = PP.text "Title:" PP.<+> pretty a
-  pretty (OtherKeyword a) = PP.text "Other:" PP.<+> pretty a
-#+END_SRC
 
 #+NAME: Parser
 #+BEGIN_SRC haskell
@@ -1115,15 +986,6 @@ headerProperties = foldl acc mempty where
 
 ** Document
 
-#+NAME: Pretty printing
-#+BEGIN_SRC haskell
-instance Pretty Document where
-  pretty d = pretty $ PrettyStruct "Document"
-               [ ("keywords", pretty (orgKeywords d))
-               , ("sections", pretty (orgSections d))
-               ]
-#+END_SRC
-
 #+NAME: Parser
 #+BEGIN_SRC haskell
 instance Parse Document where
@@ -1136,8 +998,8 @@ instance Parse Document where
     ss <- P.many parse :: Parser [Section]
     skipEmptyLines *> P.eof
     return Document
-      { orgKeywords = hs
-      , orgSections = ss
+      { keywords = hs
+      , sections = ss
       }
 #+END_SRC
 

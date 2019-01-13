@@ -1,12 +1,39 @@
 * The Org Document Structure
 
+A good place to start is the data structure =CCWEB= uses to represent
+Org files. A ~Document~ consists of a list of /keywords/, which appear
+at the top of the file and contain elements such as =#+TITLE= and
+=#+PROPERTIES=, followed by a sequence of /sections/. Here we are
+using two different terminologies: ``keywords'' are an Org concept, and
+``sections'' are a =WEB= concept.
+
 #+NAME: Document data model
 #+BEGIN_SRC haskell
 data Document = Document
-  { orgKeywords :: [Keyword]
-  , orgSections :: [Section]
+  { keywords :: [Keyword]
+  , sections :: [Section]
   }
 #+END_SRC
+
+One thing we will want to do with each document structure is print it
+in a way that makes it easier to debug problems. The details will be
+explained later, but the gist of it is that we will make each of them
+an instance of the ~Pretty~ typeclass. In the case of ~Document~, as
+in many others, we will print them as a list of key-value pairs (maps)
+with a label.
+
+#+NAME: Pretty printing
+#+BEGIN_SRC haskell
+instance Pretty Document where
+  pretty = prettyStruct "Document"
+             [ ("keywords", pretty . keywords)
+             , ("sections", pretty . sections)
+             ]
+#+END_SRC
+
+Our support for keywords is limited, so let's get that out of the
+way. There are three keywords we understand, and the others are all
+captured in the ~OtherKeyword~ catch-all.
 
 #+NAME: Document data model
 #+BEGIN_SRC haskell
@@ -16,22 +43,324 @@ data Keyword = AuthorKeyword Text
              | OtherKeyword String
 #+END_SRC
 
+Pretty-printing just goes over all the constructor alternatives.
+
+#+NAME: Pretty printing
+#+BEGIN_SRC haskell
+instance Pretty Keyword where
+  pretty (AuthorKeyword a) = PP.hsep [PP.text "Author:", pretty a]
+  pretty (PropertyKeyword a) = PP.hsep [PP.text "Properties:", pretty a]
+  pretty (TitleKeyword a) = PP.hsep [PP.text "Title:", pretty a]
+  pretty (OtherKeyword a) = PP.hsep [PP.text "Other:", pretty a]
+#+END_SRC
+
+** Sections
+
+Sections are the main object. Just as in =WEB=, sections consist
+mainly of an optional piece of documentation, followed by an optional
+source block (=CCWEB= does not have the concept of ``macros'' built
+in). Each sectin has its own number (which is sequential according to
+order of appearance in the file), an optional headline, and
+/properties/, to which we will get to later.
+
 #+NAME: Document data model
 #+BEGIN_SRC haskell
 data Section = Section
   { sectionNumber :: Int
   , sectionHeadline :: Maybe Headline
+  , documentation :: [Text]
+  , sectionSourceBlock :: Maybe SourceBlock
   , sectionProps :: Properties
   , sectionDerivedProperties :: Properties
-  , sectionDocumentation :: [Text]
-  , sectionSourceBlock :: Maybe SourceBlock
   }
 #+END_SRC
+
+A section structure is also pretty-printed as a map.
+
+#+NAME: Pretty printing
+#+BEGIN_SRC haskell
+instance Pretty Section where
+  pretty = prettyStruct "Section"
+             [ ("number", pretty . sectionNumber)
+             , ("headline", pretty . sectionHeadline)
+             , ("text", pretty . documentation)
+             , ("code", pretty . sectionSourceBlock)
+             , ("properties", pretty . sectionProps)
+             , ("derived properties", pretty . sectionDerivedProperties)
+             ]
+#+END_SRC
+
+A section headline (this is the Org term, it is the section /title/
+for =WEB=) is the title itself together with a section /level/. The
+level is 0 for top-level sections, and increases after that. An org
+section starting with =***=, for example, has level 2.
 
 #+NAME: Document data model
 #+BEGIN_SRC haskell
 data Headline = Headline Int Text deriving Show
 #+END_SRC
+
+We chose to pretty-print it almost literally.
+
+#+NAME: Pretty printing
+#+BEGIN_SRC haskell
+instance Pretty Headline where
+  pretty (Headline l t) = PP.hcat [PP.char '*', PP.braces (pretty l), pretty t]
+#+END_SRC
+
+** Properties
+
+We should get properties out of the way before moving on. Org defines
+a property as a named list of key-value pairs. The key itself is
+always a string, but the value can be any expression that can be
+evaluated by Emacs. We will represent a property as a map, and the
+list of named properties as a super-map of that one.
+
+#+NAME: Document data model
+#+BEGIN_SRC haskell
+type Property   = Map.Map String SExpr
+type Properties = Map.Map String Property
+#+END_SRC
+
+There is no avoiding parsing the s-expressions.  For our purposes it
+will be useful to distinguish between a plain old atom and both
+numbers and a ``truth value.'' These values ought to have been called
+~Int~ and ~Bool~, but those were taken.
+
+#+NAME: Document data model
+#+BEGIN_SRC haskell
+data SExpr =
+  Atom String
+  | BoolAtom Bool
+  | IntAtom Int
+  | SExpr [SExpr]
+  deriving (Eq, Ord)
+#+END_SRC
+
+Since the expressions we will encounter are simple, we print them all
+in a single line.
+
+#+NAME: Pretty printing
+#+BEGIN_SRC haskell
+instance Show SExpr where
+  show (Atom x) = x
+  show (BoolAtom x) = show x
+  show (IntAtom x) = show x
+  show (SExpr xs) = "(" ++ intercalate " " (map show xs) ++ ")"
+
+instance Pretty SExpr where
+  pretty = PP.text . show
+#+END_SRC
+
+There is also no avoiding evaluating some of them, because there are
+situations where we want to tangle things depending on the system
+type. Those are of the form
+
+#+BEGIN_SRC emacs-lisp :tangle no
+(when (eq system-type 'gnu/linux) "file/name")
+(unless (string-suffix-p "work.com" system-name) "file/name")
+#+END_SRC
+
+Evaluation will be only done in the parser, and the ~ParserState~
+parameter will provide the necessary context.
+
+#+NAME: Document data model
+#+BEGIN_SRC haskell
+class Eval a where
+  eval :: ParserState -> a -> a
+#+END_SRC
+
+Let us start by evaluating properties, as that's easy.
+
+#+NAME: Document data model
+#+BEGIN_SRC haskell
+instance Eval Property where; eval s = Map.map (eval s)
+instance Eval Properties where; eval s = Map.map (eval s)
+#+END_SRC
+
+Now to s-expressions. We will pattern match on all the ones we
+support, and return them unmodified if matching fails.
+
+#+NAME: Document data model
+#+BEGIN_SRC haskell
+instance Eval SExpr where
+  <<Evaluate an s-expression>>
+  eval _ x = x
+#+END_SRC
+
+The easiest evaluatin case is the function =identity=.
+
+#+NAME: Evaluate an s-expression
+#+BEGIN_SRC haskell
+eval s (SExpr [Atom "identity", expr]) = eval s expr
+#+END_SRC
+
+Also simple are the pre-defined constants. We have to translate between Haskell
+and Emacs system names to maintain compatibility.
+
+#+NAME: Evaluate an s-expression
+#+BEGIN_SRC haskell
+eval s (SExpr [Atom "system-name"]) = Atom $ hostName s
+eval _ (Atom "system-type") = Atom $ case Sys.os of
+            "linux" -> "gnu/linux"
+            "mingw32" -> "windows-nt"
+            o -> o
+#+END_SRC
+
+The system type requires the import of =System.Info=.
+
+#+NAME: Imports
+#+BEGIN_SRC haskell
+import qualified System.Info as Sys
+#+END_SRC
+
+Number evaluation is as robust as it needs to be, which is not much,
+and only for numbers we care about, which are only octals for now.
+
+#+NAME: Evaluate an s-expression
+#+BEGIN_SRC haskell
+eval _ (Atom ('#':'o':x:y:z:[])) =
+  IntAtom $ 8 * ((8 * oct x) + oct y) + oct z
+  where oct c = ord c - ord '0'
+#+END_SRC
+
+Next are the comparisons, including =string-suffix-p=
+
+#+NAME: Evaluate an s-expression
+#+BEGIN_SRC haskell
+eval s (SExpr [Atom "eq", e1, e2]) = BoolAtom $ (eval s e1) == (eval s e2)
+
+eval s (SExpr [Atom "string-suffix-p", suffix, expr]) =
+  case (eval s suffix, eval s expr) of
+    (Atom s', Atom str) -> BoolAtom $ isSuffixOf s' str
+    (e1, e2) -> SExpr [Atom "string-suffix-p", e1, e2]
+#+END_SRC
+
+Finally, the conditionals.
+
+#+NAME: Evaluate an s-expression
+#+BEGIN_SRC haskell
+eval s (SExpr [Atom "when", expr, result]) =
+  case eval s expr of
+    BoolAtom True -> eval s result
+    expr' -> expr'
+
+eval s (SExpr [Atom "unless", expr, result]) =
+  case eval s expr of
+    BoolAtom False -> eval s result
+    BoolAtom True  -> BoolAtom False
+    expr' -> expr'
+#+END_SRC
+
+Sections, as we have seen above, have properties, and so will code
+blocks below. The only property we care about is the =header-args=
+one, which will tell us things about files being tangled, whether to
+tangle or not, or what permissions to set on tangled files. We will
+provide an interface to those via a ~HeaderArgs~ type class. The
+implementation for ~Section~ uses the derived properties field, which
+is nearly always what we want.
+
+#+NAME: Document data model
+#+BEGIN_SRC haskell
+class HeaderArgs a where
+  headerArgs :: a -> Property
+  headerArg :: String -> a -> Maybe SExpr
+  headerArg k a = Map.lookup k $ headerArgs a
+
+instance HeaderArgs Properties where
+  headerArgs = Map.findWithDefault Map.empty "header-args"
+
+instance HeaderArgs Section where
+  headerArgs = headerArgs . sectionDerivedProperties
+#+END_SRC
+
+
+** Source Blocks
+
+Source blocks, defined in an Org file via the =#+BEGIN_SRC=
+construction, are somewhat like sections: they have an optional name
+(specified with the =#+NAME= syntax) and their own properties. Their
+content is a list of code lines, which are in a specified language.
+When tangling, we will also want to know where in the source code they
+appear so we can insert pragmas to inform the compiler about them.
+
+#+NAME: Document data model
+#+BEGIN_SRC haskell
+data SourceBlock = SourceBlock
+  { blockName :: Maybe Text
+  , blockLanguage :: String
+  , blockLines :: [CodeLine]
+  , blockLocation :: P.SourcePos
+  , blockProperties :: Property
+  , blockDerivedProperties :: Property
+  }
+#+END_SRC
+
+Source blocks are also pretty-printed as maps.
+
+#+NAME: Pretty printing
+#+BEGIN_SRC haskell
+instance Pretty SourceBlock where
+  pretty = prettyStruct "SourceBlock"
+             [ ("name", pretty . blockName)
+             , ("language", pretty . blockLanguage)
+             , ("properties", pretty . blockProperties)
+             , ("derived properties", pretty . blockDerivedProperties)
+             , ("location", pretty . blockLocation)
+             , ("lines", pretty . blockLines)
+             ]
+#+END_SRC
+
+The source block properties are those for =header-arg= directly.
+
+#+NAME: Document data model
+#+BEGIN_SRC haskell
+instance HeaderArgs SourceBlock where
+  headerArgs = blockDerivedProperties
+#+END_SRC
+
+Source blocks that are tangled can be uniquely identified from their
+~SourceBlockId~, which is a derived property. We need it to be an
+instance of ~Ord~ because we want to have them be keys of a map later
+on.
+
+#+NAME: Document data model
+#+BEGIN_SRC haskell
+data SourceBlockId = FileBlock FilePath | NamedBlock Text deriving Eq
+
+instance Ord SourceBlockId where
+  (<=) (FileBlock p1) (FileBlock p2) = p1 <= p2
+  (<=) (NamedBlock p1) (NamedBlock p2) = p1 <= p2
+  (<=) (FileBlock _) (NamedBlock _) = False
+  (<=) _ _ = True
+#+END_SRC
+
+The source block ID is a derived property. A block that is not named,
+and is also not tangled to any file, doesn't have one. A file
+destination is specified in the =:tangle= property, which can be
+inherited.
+
+#+NAME: Document data model
+#+BEGIN_SRC haskell
+sourceBlockId :: SourceBlock -> Maybe SourceBlockId
+sourceBlockId SourceBlock{ blockName = (Just name) } = Just $ NamedBlock name
+sourceBlockId block = case headerArg ":tangle" block of
+    Nothing -> Nothing
+    Just (Atom f) -> Just $ FileBlock f
+    Just (BoolAtom _) -> Nothing
+    Just e -> error $ "unsupported tangle destination: " ++ show e
+#+END_SRC
+
+
+#+NAME: Document data model
+#+BEGIN_SRC haskell
+data CodeElement = Literal P.SourcePos String
+                 | SectionReference P.SourcePos Text
+
+data CodeLine = CodeLine P.SourcePos [CodeElement]
+#+END_SRC
+
+** Text
 
 #+NAME: Document data model
 #+BEGIN_SRC haskell
@@ -48,73 +377,7 @@ data TextElement =
   deriving (Eq, Ord, Show)
 #+END_SRC
 
-#+NAME: Document data model
-#+BEGIN_SRC haskell
-data SourceBlock = SourceBlock
-  { blockName :: Maybe Text
-  , blockLanguage :: String
-  , blockProperties :: Property
-  , blockDerivedProperties :: Property
-  , blockLocation :: P.SourcePos
-  , blockLines :: [CodeLine]
-  }
-#+END_SRC
-
-#+NAME: Document data model
-#+BEGIN_SRC haskell
-data CodeElement = Literal P.SourcePos String
-                 | SectionReference P.SourcePos Text
-
-data CodeLine = CodeLine P.SourcePos [CodeElement]
-#+END_SRC
-
-#+NAME: Document data model
-#+BEGIN_SRC haskell
-type Property = Map.Map String SExpression
-type Properties = Map.Map String Property
-#+END_SRC
-
-#+NAME: Document data model
-#+BEGIN_SRC haskell
-data SExpression =
-  Atom String
-  | Series [SExpression]
-  | YesNo Bool
-  deriving (Eq, Ord)
-#+END_SRC
-
-#+NAME: Document data model
-#+BEGIN_SRC haskell
-class HeaderArgs a where
-  headerArgs :: a -> Property
-  headerArg :: String -> a -> Maybe SExpression
-  headerArg k a = Map.lookup k $ headerArgs a
-
-instance HeaderArgs Properties where
-  headerArgs = Map.findWithDefault Map.empty "header-args"
-
-instance HeaderArgs SourceBlock where
-  headerArgs = blockDerivedProperties
-#+END_SRC
-
-#+NAME: Document data model
-#+BEGIN_SRC haskell
-data SourceBlockId = FileBlock FilePath | NamedBlock Text deriving Eq
-
-instance Ord SourceBlockId where
-  (<=) (FileBlock p1) (FileBlock p2) = p1 <= p2
-  (<=) (NamedBlock p1) (NamedBlock p2) = p1 <= p2
-  (<=) (FileBlock _) (NamedBlock _) = False
-  (<=) _ _ = True
-
-sourceBlockId :: SourceBlock -> Maybe SourceBlockId
-sourceBlockId SourceBlock{ blockName = (Just name) } = Just $ NamedBlock name
-sourceBlockId block = case headerArg ":tangle" block of
-    Nothing -> Nothing
-    Just (Atom f) -> Just $ FileBlock f
-    Just (YesNo _) -> Nothing
-    Just e -> error $ "unsupported tangle destination: " ++ show e
-#+END_SRC
+** Operations on Documents
 
 #+NAME: Document data model
 #+BEGIN_SRC haskell
@@ -131,5 +394,6 @@ type DocumentPartition = Map.Map SourceBlockId [Section]
      :: [(SourceBlockId, Section)] -> [(SourceBlockId, Section)])
   . (mapMaybe (\s -> sectionSourceBlock s >>= sourceBlockId >>= Just . (,s))
      :: [Section] -> [(SourceBlockId, Section)])
-  . orgSections
+  . sections
 #+END_SRC
+
