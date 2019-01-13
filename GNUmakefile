@@ -21,8 +21,8 @@ define STACK_PREAMBLE
   --package filepath
   --package directory
   --package unix
-  --package pretty
   --package optparse-applicative
+  --package pretty
 -}
 endef
 

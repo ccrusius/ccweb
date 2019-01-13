@@ -19,7 +19,7 @@ import GHC.Exts (IsList(..), groupWith, sortWith)
 import Network.HostName (getHostName)
 {-# LINE 214 "org/doc.org" #-}
 import qualified System.Info as Sys
-{-# LINE 28 "org/parser.org" #-}
+{-# LINE 72 "org/parser.org" #-}
 import qualified Text.Parsec as P
 import qualified Text.Parsec.Pos as P
 {-# LINE 395 "org/tangle.org" #-}
@@ -27,10 +27,10 @@ import qualified System.Directory as D
 import qualified System.Environment as Env
 import qualified System.FilePath as F
 import qualified System.Posix.Files as F
-{-# LINE 125 "ccweb.org" #-}
-import qualified Text.PrettyPrint as PP
-{-# LINE 229 "ccweb.org" #-}
+{-# LINE 33 "org/scaffold.org" #-}
 import qualified Options.Applicative as O
+{-# LINE 180 "org/scaffold.org" #-}
+import qualified Text.PrettyPrint as PP
 {-# LINE 12 "org/doc.org" #-}
 data Document = Document
   { keywords :: [Keyword]
@@ -212,11 +212,7 @@ instance Pretty SourceBlock where
              , ("location", pretty . blockLocation)
              , ("lines", pretty . blockLines)
              ]
-{-# LINE 18 "org/parser.org" #-}
-instance Pretty OrgLine where
-  pretty (OrgLine p l) =
-    PP.hcat [pretty p, PP.colon, PP.text (takeWhile (/= '\NUL') l)]
-{-# LINE 165 "org/parser.org" #-}
+{-# LINE 23 "org/parser.org" #-}
 instance Pretty ParserState where
   pretty = prettyStruct "ParserState"
     [ ("counter", pretty . sectionCounter)
@@ -224,74 +220,78 @@ instance Pretty ParserState where
     , ("log level", pretty . parserLogLevel)
     , ("property stack", pretty . propertyStack)
     ]
-{-# LINE 135 "ccweb.org" #-}
+{-# LINE 62 "org/parser.org" #-}
+instance Pretty OrgLine where
+  pretty (OrgLine p l) =
+    PP.hcat [pretty p, PP.colon, PP.text (takeWhile (/= '\NUL') l)]
+{-# LINE 190 "org/scaffold.org" #-}
 class Pretty a where
   pretty :: a -> PP.Doc
   prettyList :: [a] -> PP.Doc
   prettyList = PP.brackets . PP.fcat . PP.punctuate PP.comma . map pretty
 
-{-# LINE 140 "ccweb.org" #-}
+{-# LINE 195 "org/scaffold.org" #-}
 instance Pretty PP.Doc where
   pretty = id
 
-{-# LINE 143 "ccweb.org" #-}
+{-# LINE 198 "org/scaffold.org" #-}
 instance Pretty Bool where
   pretty True = PP.text "True"
   pretty False = PP.text "False"
 
-{-# LINE 147 "ccweb.org" #-}
+{-# LINE 202 "org/scaffold.org" #-}
 instance Pretty Char where
   pretty = PP.char
   prettyList = PP.text
 
-{-# LINE 151 "ccweb.org" #-}
+{-# LINE 206 "org/scaffold.org" #-}
 instance Pretty Int where
   pretty = PP.int
 
-{-# LINE 154 "ccweb.org" #-}
+{-# LINE 209 "org/scaffold.org" #-}
 instance Pretty a => Pretty (Maybe a) where
   pretty Nothing = PP.text "Nothing"
   pretty (Just a) = pretty a
 
-{-# LINE 158 "ccweb.org" #-}
+{-# LINE 213 "org/scaffold.org" #-}
 instance (Pretty a, Pretty b) => Pretty (a,b) where
   pretty (a,b) = PP.parens . PP.fcat . PP.punctuate PP.comma $ [pretty a, pretty b]
 
-{-# LINE 161 "ccweb.org" #-}
+{-# LINE 216 "org/scaffold.org" #-}
 instance Pretty a => Pretty [a] where
   pretty = prettyList
 
-{-# LINE 164 "ccweb.org" #-}
+{-# LINE 219 "org/scaffold.org" #-}
 instance Pretty P.ParseError where
   pretty = PP.text . show
-{-# LINE 170 "ccweb.org" #-}
+{-# LINE 225 "org/scaffold.org" #-}
 instance (Pretty k, Pretty v) => Pretty (Map.Map k v) where
   pretty = PP.brackets
            . PP.fcat
            . PP.punctuate PP.comma
            . map (\(k,v) -> pretty k PP.<> PP.equals PP.<> pretty v)
            . Map.toList
-{-# LINE 180 "ccweb.org" #-}
+{-# LINE 235 "org/scaffold.org" #-}
 data PrettyStruct = PrettyStruct String [(String, PP.Doc)]
 
-{-# LINE 182 "ccweb.org" #-}
+{-# LINE 237 "org/scaffold.org" #-}
 instance Pretty PrettyStruct where
   pretty (PrettyStruct t ps) =
     let fields = map (\(n,p) -> PP.text n PP.<> PP.colon PP.<+> p) ps
     in PP.text t PP.<> PP.braces (PP.fcat $ PP.punctuate PP.comma fields)
 
-{-# LINE 187 "ccweb.org" #-}
+{-# LINE 242 "org/scaffold.org" #-}
 prettyStruct :: String -> [(String, (a -> PP.Doc))] -> a -> PP.Doc
 prettyStruct name kfs a = pretty (PrettyStruct name (map (\(k,f) -> (k,f a)) kfs))
-{-# LINE 193 "ccweb.org" #-}
+{-# LINE 248 "org/scaffold.org" #-}
 instance Pretty P.SourcePos where
   pretty p = pretty (P.sourceName p)
              PP.<> PP.colon PP.<> pretty (P.sourceLine p)
              PP.<> PP.colon PP.<> pretty (P.sourceColumn p)
-{-# LINE 383 "ccweb.org" #-}
+{-# LINE 137 "ccweb.org" #-}
 instance Pretty OrgLines where
   pretty (OrgLines ls) = pretty ls
-{-# LINE 399 "ccweb.org" #-}
+{-# LINE 153 "ccweb.org" #-}
 instance Pretty TextElement where
   pretty (Bold a) = PP.text "Bold:" PP.<+> pretty a
   pretty (InlineCode a) = PP.text "InlineCode:" PP.<+> pretty a
@@ -300,20 +300,20 @@ instance Pretty TextElement where
   pretty (StrikeThrough a) = PP.text "StrikeThrough:" PP.<+> pretty a
   pretty (TeXMath a) = PP.text "TeXMath:" PP.<+> pretty a
   pretty (Verbatim a) = PP.text "Verbatim:" PP.<+> pretty a
-{-# LINE 429 "ccweb.org" #-}
+{-# LINE 183 "ccweb.org" #-}
 instance Pretty Text where
   pretty (Text xs) = PP.text "Text:" PP.<+> PP.hcat (map pretty xs)
-{-# LINE 450 "ccweb.org" #-}
+{-# LINE 204 "ccweb.org" #-}
 instance Pretty CodeElement where
   pretty (Literal p s) = PP.parens $ pretty p PP.<> PP.colon PP.<> pretty s
   pretty (SectionReference p t) = pretty p PP.<> PP.colon PP.<> PP.char '«' PP.<> pretty t PP.<> PP.char '»'
-{-# LINE 482 "ccweb.org" #-}
+{-# LINE 236 "ccweb.org" #-}
 instance Pretty CodeLine where
   pretty (CodeLine p xs) = pretty p PP.<> PP.colon PP.<> pretty xs
-{-# LINE 203 "ccweb.org" #-}
+{-# LINE 7 "org/scaffold.org" #-}
 data LogLevel = Quiet | Error | Warning | Info | Debug | Trace deriving (Eq,Show)
 
-{-# LINE 205 "ccweb.org" #-}
+{-# LINE 9 "org/scaffold.org" #-}
 instance Ord LogLevel where
   (<=) _ Trace = True
   (<=) Trace _ = False
@@ -327,45 +327,29 @@ instance Ord LogLevel where
   (<=) Error _ = False
   (<=) Quiet Quiet = True
 
-{-# LINE 218 "ccweb.org" #-}
+{-# LINE 22 "org/scaffold.org" #-}
 instance Pretty LogLevel where
   pretty = PP.text . show
 
-{-# LINE 221 "ccweb.org" #-}
+{-# LINE 25 "org/scaffold.org" #-}
 logM :: Pretty a => LogLevel -> LogLevel -> a -> IO ()
 logM lvl minLvl = when (lvl >= minLvl) . putStrLn . PP.render . pretty
-{-# LINE 88 "ccweb.org" #-}
-newtype Stack a = Stack [a]
+{-# LINE 11 "org/parser.org" #-}
+data ParserState = ParserState
+  { sectionCounter :: Int
+  , propertyStack  :: Stack Properties
+  , hostName       :: String
+  , parserLogLevel :: LogLevel
+  }
+{-# LINE 39 "org/parser.org" #-}
+type Parser = P.Parsec OrgLines ParserState
 
-{-# LINE 90 "ccweb.org" #-}
-instance Pretty a => Pretty (Stack a) where
-  pretty (Stack xs) = pretty xs
-
-{-# LINE 93 "ccweb.org" #-}
-top :: Stack a -> a
-top (Stack xs) = head xs
-
-{-# LINE 96 "ccweb.org" #-}
-push :: a -> Stack a -> Stack a
-push x (Stack xs) = Stack $ x:xs
-
-{-# LINE 99 "ccweb.org" #-}
-pop :: Stack a -> Stack a
-pop (Stack []) = error $ "popping empty stack"
-pop (Stack (_:xs)) = Stack xs
-
-{-# LINE 103 "ccweb.org" #-}
-resize :: Int -> Stack a -> Stack a
-resize i (Stack xs)
-  | i == l = Stack xs
-  | i < l = Stack $ reverse . take i . reverse $ xs
-  | i > l && l > 0 = Stack $ replicate (i - l) (head xs) ++ xs
-  | otherwise = error $ "resizing empty stack"
-  where
-    l = length xs
-{-# LINE 10 "org/parser.org" #-}
+{-# LINE 41 "org/parser.org" #-}
+class Parse a where
+  parse :: Parser a
+{-# LINE 54 "org/parser.org" #-}
 data OrgLine = OrgLine P.SourcePos String
-{-# LINE 46 "org/parser.org" #-}
+{-# LINE 90 "org/parser.org" #-}
 ingest :: FilePath -> IO [OrgLine]
 ingest file = do
     zipWith OrgLine [P.newPos file l 0 | l <- [1..]] . lines
@@ -375,7 +359,7 @@ ingest file = do
     scan l@(OrgLine pos s) ls =
       maybe (return (l : ls)) (fmap (++ ls) . ingest)
       $ (
-{-# LINE 64 "org/parser.org" #-}
+{-# LINE 108 "org/parser.org" #-}
          fromEither . P.parse
          (P.setPosition pos *>
              P.optionMaybe (
@@ -384,69 +368,56 @@ ingest file = do
                *> P.manyTill anyChar (P.char '"')
              ))
          (P.sourceName pos)
-{-# LINE 54 "org/parser.org" #-}
+{-# LINE 98 "org/parser.org" #-}
                             :: String -> Maybe FilePath) s
-{-# LINE 88 "org/parser.org" #-}
+{-# LINE 132 "org/parser.org" #-}
 anyChar :: (P.Stream s m Char) => P.ParsecT s u m Char
 anyChar = P.noneOf "\n\r"
-{-# LINE 102 "org/parser.org" #-}
+{-# LINE 146 "org/parser.org" #-}
 instance Monad m => P.Stream OrgLine m Char where
   uncons (
-{-# LINE 115 "org/parser.org" #-}
+{-# LINE 159 "org/parser.org" #-}
           OrgLine _ ('\NUL':_)
-{-# LINE 103 "org/parser.org" #-}
+{-# LINE 147 "org/parser.org" #-}
                               ) =
     return Nothing
   uncons (OrgLine p []) =
     return $ Just ('\n', OrgLine (P.updatePosChar p '\n') "\NUL")
   uncons (OrgLine p (x:xs)) =
     return $ Just (x, OrgLine (P.updatePosChar p x) xs)
-{-# LINE 125 "org/parser.org" #-}
+{-# LINE 169 "org/parser.org" #-}
 newtype OrgLines = OrgLines [OrgLine]
-{-# LINE 134 "org/parser.org" #-}
+{-# LINE 178 "org/parser.org" #-}
 instance Monad m => P.Stream OrgLines m Char where
   uncons (OrgLines (
-{-# LINE 115 "org/parser.org" #-}
+{-# LINE 159 "org/parser.org" #-}
                     OrgLine _ ('\NUL':_)
-{-# LINE 135 "org/parser.org" #-}
+{-# LINE 179 "org/parser.org" #-}
                                         :[])) = return Nothing
   uncons (OrgLines (x:xs)) = P.uncons x >>= \case
     Nothing -> P.uncons (fromList xs :: OrgLines)
     Just (x',xs') -> return $ Just (x', OrgLines (xs':xs))
   uncons (OrgLines []) =
     error $ "(internal): uncons of empty OrgLines instance"
-{-# LINE 153 "org/parser.org" #-}
-data ParserState = ParserState
-  { sectionCounter :: Int
-  , propertyStack  :: Stack Properties
-  , hostName       :: String
-  , parserLogLevel :: LogLevel
-  }
-{-# LINE 179 "org/parser.org" #-}
-type Parser = P.Parsec OrgLines ParserState
-
-{-# LINE 181 "org/parser.org" #-}
-class Parse a where
-  parse :: Parser a
-{-# LINE 193 "org/parser.org" #-}
+{-# LINE 195 "org/parser.org" #-}
 space :: Parser Char
 space = P.satisfy (\c -> isSpace c && notElem c "\n\r")
 
-{-# LINE 196 "org/parser.org" #-}
+{-# LINE 198 "org/parser.org" #-}
 spaces :: Parser String
 spaces = P.many space
 
-{-# LINE 199 "org/parser.org" #-}
+{-# LINE 201 "org/parser.org" #-}
 spaces1 :: Parser String
 spaces1 = P.many1 space
-{-# LINE 210 "org/parser.org" #-}
+{-# LINE 212 "org/parser.org" #-}
 symbolChar :: Parser Char
 symbolChar = P.satisfy (\c -> isPrint c && not (isSpace c) && notElem c "()=")
 
-{-# LINE 213 "org/parser.org" #-}
+{-# LINE 215 "org/parser.org" #-}
 symbol :: Parser String
 symbol = P.many1 symbolChar
-{-# LINE 227 "org/parser.org" #-}
+{-# LINE 229 "org/parser.org" #-}
 satisfy :: (Char -> Bool) -> Parser Char
 satisfy f = P.tokenPrim
             (\c -> show [c])
@@ -455,22 +426,51 @@ satisfy f = P.tokenPrim
                  (OrgLine pos' _):_ -> pos'
                  [] -> error $ show pos ++ ": (internal) empty OrgLines")
             (\c -> if f c then Just c else Nothing)
-{-# LINE 245 "org/parser.org" #-}
+{-# LINE 247 "org/parser.org" #-}
 char :: Char -> Parser Char
 char c = satisfy (==c) P.<?> show [c]
 
-{-# LINE 248 "org/parser.org" #-}
+{-# LINE 250 "org/parser.org" #-}
 newline :: Parser Char
 newline = char '\n' P.<?> "lf new-line"
 
-{-# LINE 251 "org/parser.org" #-}
+{-# LINE 253 "org/parser.org" #-}
 crlf :: Parser Char
 crlf = char '\r' *> char '\n' P.<?> "crlf new-line"
 
-{-# LINE 254 "org/parser.org" #-}
+{-# LINE 256 "org/parser.org" #-}
 endOfLine :: Parser Char
 endOfLine = newline <|> crlf P.<?> "new-line"
-{-# LINE 342 "ccweb.org" #-}
+{-# LINE 151 "org/scaffold.org" #-}
+newtype Stack a = Stack [a]
+
+{-# LINE 153 "org/scaffold.org" #-}
+instance Pretty a => Pretty (Stack a) where
+  pretty (Stack xs) = pretty xs
+
+{-# LINE 156 "org/scaffold.org" #-}
+top :: Stack a -> a
+top (Stack xs) = head xs
+
+{-# LINE 159 "org/scaffold.org" #-}
+push :: a -> Stack a -> Stack a
+push x (Stack xs) = Stack $ x:xs
+
+{-# LINE 162 "org/scaffold.org" #-}
+pop :: Stack a -> Stack a
+pop (Stack []) = error $ "popping empty stack"
+pop (Stack (_:xs)) = Stack xs
+
+{-# LINE 166 "org/scaffold.org" #-}
+resize :: Int -> Stack a -> Stack a
+resize i (Stack xs)
+  | i == l = Stack xs
+  | i < l = Stack $ reverse . take i . reverse $ xs
+  | i > l && l > 0 = Stack $ replicate (i - l) (head xs) ++ xs
+  | otherwise = error $ "resizing empty stack"
+  where
+    l = length xs
+{-# LINE 96 "ccweb.org" #-}
 initialParserState :: ParserState
 initialParserState = ParserState
   { sectionCounter = 0
@@ -478,7 +478,7 @@ initialParserState = ParserState
   , parserLogLevel = Debug
   , hostName       = []
   }
-{-# LINE 353 "ccweb.org" #-}
+{-# LINE 107 "ccweb.org" #-}
 parserDebug :: (Pretty a, Pretty b) => a -> b -> Parser ()
 parserDebug l s = do
   lvl <- parserLogLevel <$> P.getState
@@ -488,7 +488,7 @@ parserDebug l s = do
   then trace (PP.render (PP.hang label 4 (pretty s))) $ return ()
   else return ()
 
-{-# LINE 362 "ccweb.org" #-}
+{-# LINE 116 "ccweb.org" #-}
 parserTrace :: Pretty a => a -> Parser ()
 parserTrace l = do
   (OrgLines ls) <- P.stateInput <$> P.getParserState
@@ -496,27 +496,27 @@ parserTrace l = do
   let user = pretty "user state" PP.<> PP.colon PP.<> pretty u
       input = pretty "looking at" PP.<> PP.colon PP.<> pretty (take 3 ls)
   parserDebug l (PP.fcat [user, input])
-{-# LINE 375 "ccweb.org" #-}
+{-# LINE 129 "ccweb.org" #-}
 instance IsList OrgLines where
   type Item OrgLines = OrgLine
   fromList xs = OrgLines xs
   toList (OrgLines xs) = xs
-{-# LINE 391 "ccweb.org" #-}
+{-# LINE 145 "ccweb.org" #-}
 line :: Parser a -> Parser a
 line p = p <* endOfLine
-{-# LINE 411 "ccweb.org" #-}
+{-# LINE 165 "ccweb.org" #-}
 instance Parse TextElement where
   parse = literalOr (return . Plain) (
-{-# LINE 417 "ccweb.org" #-}
+{-# LINE 171 "ccweb.org" #-}
                                       P.try (Bold <$> enclosed '*')
                                       <|> P.try (InlineCode <$> enclosed '~')
                                       <|> P.try (Italics <$> enclosed '/')
                                       <|> P.try (StrikeThrough <$> enclosed '+')
                                       <|> P.try (TeXMath <$> enclosed '$')
                                       <|> P.try (Verbatim <$> enclosed '=')
-{-# LINE 412 "ccweb.org" #-}
+{-# LINE 166 "ccweb.org" #-}
                                                                            )
-{-# LINE 437 "ccweb.org" #-}
+{-# LINE 191 "ccweb.org" #-}
 instance Parse Text where
   parse = do
     --parserTrace "Text: parse"
@@ -524,12 +524,12 @@ instance Parse Text where
     P.notFollowedBy (spaces *> P.string "#+NAME")
     P.notFollowedBy (spaces *> P.string "#+BEGIN_SRC")
     Text <$> line (P.many1 parse :: Parser [TextElement])
-{-# LINE 457 "ccweb.org" #-}
+{-# LINE 211 "ccweb.org" #-}
 instance Parse CodeElement where
   parse = literalOr
               (liftA2 Literal P.getPosition . return)
               (P.try $ 
-{-# LINE 465 "ccweb.org" #-}
+{-# LINE 219 "ccweb.org" #-}
                        do
                          p <- P.try (P.string "<<") *> P.getPosition
                          --parserTrace "Trying to parse a code reference after '<<'"
@@ -543,132 +543,132 @@ instance Parse CodeElement where
                              r = SectionReference p t
                          --parserTrace $ PP.text "Reference parsed" PP.<> PP.colon PP.<> pretty r
                          return r
-{-# LINE 460 "ccweb.org" #-}
+{-# LINE 214 "ccweb.org" #-}
                                  )
-{-# LINE 488 "ccweb.org" #-}
+{-# LINE 242 "ccweb.org" #-}
 instance Parse CodeLine where
   parse = line (liftA2 CodeLine
                      P.getPosition
                      (P.many parse :: Parser [CodeElement]))
-{-# LINE 498 "ccweb.org" #-}
+{-# LINE 252 "ccweb.org" #-}
 instance Parse SExpr where
   parse =
     (
-{-# LINE 509 "ccweb.org" #-}
+{-# LINE 263 "ccweb.org" #-}
      SExpr <$> ( P.try (P.char '(')
                   *> spaces
                   *> (P.sepEndBy parse spaces1 <* P.char ')')
                 )
-{-# LINE 500 "ccweb.org" #-}
+{-# LINE 254 "ccweb.org" #-}
                  )
     <|>
     P.try (
-{-# LINE 517 "ccweb.org" #-}
+{-# LINE 271 "ccweb.org" #-}
            BoolAtom <$> (
              (P.string "no" *> P.lookAhead P.space *> return False)
              <|>
              (P.string "yes" *> P.lookAhead P.space *> return True)
              )
-{-# LINE 502 "ccweb.org" #-}
+{-# LINE 256 "ccweb.org" #-}
               )
     <|>
     (
-{-# LINE 526 "ccweb.org" #-}
+{-# LINE 280 "ccweb.org" #-}
      Atom <$> (enclosed '"' <|> symbol)
-{-# LINE 504 "ccweb.org" #-}
+{-# LINE 258 "ccweb.org" #-}
                                        )
-{-# LINE 533 "ccweb.org" #-}
+{-# LINE 287 "ccweb.org" #-}
 instance Parse Properties where
   parse = (
-{-# LINE 540 "ccweb.org" #-}
+{-# LINE 294 "ccweb.org" #-}
            do
              _ <- P.try (P.string "#+PROPERTY:") *> spaces
              p <- symbol <* spaces1
              kvs <- 
-{-# LINE 549 "ccweb.org" #-}
+{-# LINE 303 "ccweb.org" #-}
                     line (Map.fromList
                           <$> P.sepEndBy
                            (
-{-# LINE 557 "ccweb.org" #-}
+{-# LINE 311 "ccweb.org" #-}
                             do
                               k <- symbol <* (spaces1 <|> (spaces *> P.char '=' *> spaces))
                               v <- parse :: Parser SExpr
                               return (k, v)
-{-# LINE 551 "ccweb.org" #-}
+{-# LINE 305 "ccweb.org" #-}
                                            )
                            spaces1)
-{-# LINE 544 "ccweb.org" #-}
+{-# LINE 298 "ccweb.org" #-}
              return $ Map.singleton p kvs
-{-# LINE 534 "ccweb.org" #-}
+{-# LINE 288 "ccweb.org" #-}
                                          )
               <|> (
-{-# LINE 565 "ccweb.org" #-}
+{-# LINE 319 "ccweb.org" #-}
                    do
                      _ <- P.try (spaces *> P.string ":PROPERTIES:" *> spaces *> endOfLine)
                      Map.fromList <$> P.manyTill
                        (
-{-# LINE 574 "ccweb.org" #-}
+{-# LINE 328 "ccweb.org" #-}
                         do
                           p <- spaces *> (enclosed ':' <* spaces)
                           kvs <- 
-{-# LINE 549 "ccweb.org" #-}
+{-# LINE 303 "ccweb.org" #-}
                                  line (Map.fromList
                                        <$> P.sepEndBy
                                         (
-{-# LINE 557 "ccweb.org" #-}
+{-# LINE 311 "ccweb.org" #-}
                                          do
                                            k <- symbol <* (spaces1 <|> (spaces *> P.char '=' *> spaces))
                                            v <- parse :: Parser SExpr
                                            return (k, v)
-{-# LINE 551 "ccweb.org" #-}
+{-# LINE 305 "ccweb.org" #-}
                                                         )
                                         spaces1)
-{-# LINE 577 "ccweb.org" #-}
+{-# LINE 331 "ccweb.org" #-}
                           return (p, kvs)
-{-# LINE 568 "ccweb.org" #-}
+{-# LINE 322 "ccweb.org" #-}
                                          )
                        (P.try (spaces *> P.string ":END:" *> spaces *> endOfLine))
-{-# LINE 535 "ccweb.org" #-}
+{-# LINE 289 "ccweb.org" #-}
                                                                                   )
-{-# LINE 584 "ccweb.org" #-}
+{-# LINE 338 "ccweb.org" #-}
 instance Parse Headline where
   parse = do
     s <- P.try (char '*') *> P.many (char '*')
     _ <- spaces1
     t <- parse :: Parser Text
     return $ Headline (length s) t
-{-# LINE 594 "ccweb.org" #-}
+{-# LINE 348 "ccweb.org" #-}
 headlineLevel :: Headline -> Int
 headlineLevel (Headline x _) = x
-{-# LINE 602 "ccweb.org" #-}
+{-# LINE 356 "ccweb.org" #-}
 instance Parse SourceBlock where
   parse = do
     --parserTrace "SourceBlock: trying to find a code block here"
     n  <- P.optionMaybe (
-{-# LINE 630 "ccweb.org" #-}
+{-# LINE 384 "ccweb.org" #-}
                          P.try (spaces *> P.string "#+NAME:")
                          *> spaces
                          *> parse :: Parser Text
-{-# LINE 605 "ccweb.org" #-}
+{-# LINE 359 "ccweb.org" #-}
                                                 )
     i  <- P.try (spaces <* (P.string "#+BEGIN_SRC" *> spaces1))
     --parserTrace "SourceBlock: found a code block, parsing language"
     l  <- symbol <* spaces
     --parserTrace "SourceBlock: found a code block, parsing properties"
     ps <- 
-{-# LINE 549 "ccweb.org" #-}
+{-# LINE 303 "ccweb.org" #-}
           line (Map.fromList
                 <$> P.sepEndBy
                  (
-{-# LINE 557 "ccweb.org" #-}
+{-# LINE 311 "ccweb.org" #-}
                   do
                     k <- symbol <* (spaces1 <|> (spaces *> P.char '=' *> spaces))
                     v <- parse :: Parser SExpr
                     return (k, v)
-{-# LINE 551 "ccweb.org" #-}
+{-# LINE 305 "ccweb.org" #-}
                                  )
                  spaces1)
-{-# LINE 611 "ccweb.org" #-}
+{-# LINE 365 "ccweb.org" #-}
     ps' <- Map.union ps . headerArgs . top . propertyStack <$> P.getState
     p  <- P.getPosition
     --parserTrace "SourceBlock: found a code block, parsing lines"
@@ -684,14 +684,14 @@ instance Parse SourceBlock where
       , blockLocation = p
       , blockLines = ls
       }
-{-# LINE 642 "ccweb.org" #-}
+{-# LINE 396 "ccweb.org" #-}
 emptyLine :: Parser ()
 emptyLine = void $ spaces *> endOfLine
 
-{-# LINE 645 "ccweb.org" #-}
+{-# LINE 399 "ccweb.org" #-}
 skipEmptyLines :: Parser ()
 skipEmptyLines = P.skipMany (P.try emptyLine)
-{-# LINE 651 "ccweb.org" #-}
+{-# LINE 405 "ccweb.org" #-}
 literalOr :: (String -> Parser a) -> Parser a -> Parser a
 literalOr f p = scan "" where
   scan [] = p <|> (anyChar >>= scan . (:""))
@@ -699,26 +699,26 @@ literalOr f p = scan "" where
     ((P.lookAhead p) *> (f $ reverse acc))
     <|> (anyChar >>= scan . (:acc))
     <|> (f $ reverse acc)
-{-# LINE 666 "ccweb.org" #-}
+{-# LINE 420 "ccweb.org" #-}
 enclosed :: Char -> Parser String
 enclosed d = P.try (P.char d) *> P.manyTill anyChar (P.char d)
-{-# LINE 674 "ccweb.org" #-}
+{-# LINE 428 "ccweb.org" #-}
 instance Parse Section where
   parse = do
     parserTrace "start of section parsing"
 
-{-# LINE 678 "ccweb.org" #-}
+{-# LINE 432 "ccweb.org" #-}
     skipEmptyLines
     h <- P.optionMaybe parse :: Parser (Maybe Headline)
 
-{-# LINE 681 "ccweb.org" #-}
+{-# LINE 435 "ccweb.org" #-}
     skipEmptyLines
     ps <- case h of
       Nothing -> return Map.empty
       _ -> parse <|> return Map.empty :: Parser Properties
     parserDebug "section properties" ps
 
-{-# LINE 687 "ccweb.org" #-}
+{-# LINE 441 "ccweb.org" #-}
     when (isJust h) $ do
       stk' <- resize (1 + (headlineLevel $ fromJust h)) . propertyStack <$> P.getState
       P.updateState (\s -> s{ propertyStack = stk' })
@@ -726,23 +726,23 @@ instance Parse Section where
       P.updateState (\s -> s{ propertyStack = push ps' stk' })
     P.getState >>= parserDebug "updated parser properties" . propertyStack
 
-{-# LINE 694 "ccweb.org" #-}
+{-# LINE 448 "ccweb.org" #-}
     skipEmptyLines
     ts  <- P.optionMaybe $ P.many1 $ parse :: Parser (Maybe [Text])
 
-{-# LINE 697 "ccweb.org" #-}
+{-# LINE 451 "ccweb.org" #-}
     skipEmptyLines
     c <- case (ts, h) of
           (Nothing, Nothing) -> Just <$> (parse :: Parser SourceBlock)
           (_, _) -> P.optionMaybe $ parse :: Parser (Maybe SourceBlock)
 
-{-# LINE 702 "ccweb.org" #-}
+{-# LINE 456 "ccweb.org" #-}
     skipEmptyLines
 
-{-# LINE 704 "ccweb.org" #-}
+{-# LINE 458 "ccweb.org" #-}
     parserTrace "end of section parsing"
 
-{-# LINE 706 "ccweb.org" #-}
+{-# LINE 460 "ccweb.org" #-}
     state <- P.getState
     let n = 1 + sectionCounter state
         ps' = top . propertyStack $ state
@@ -755,7 +755,7 @@ instance Parse Section where
       , documentation = fromMaybe [] ts
       , sectionSourceBlock = c
       }
-{-# LINE 724 "ccweb.org" #-}
+{-# LINE 478 "ccweb.org" #-}
 instance Parse Keyword where
   parse = propertyKeyword <|> titleKeyword <|> authorKeyword <|> otherKeyword
     where
@@ -764,26 +764,26 @@ instance Parse Keyword where
         AuthorKeyword <$> parse
       propertyKeyword = do
         PropertyKeyword <$> 
-{-# LINE 540 "ccweb.org" #-}
+{-# LINE 294 "ccweb.org" #-}
                             do
                               _ <- P.try (P.string "#+PROPERTY:") *> spaces
                               p <- symbol <* spaces1
                               kvs <- 
-{-# LINE 549 "ccweb.org" #-}
+{-# LINE 303 "ccweb.org" #-}
                                      line (Map.fromList
                                            <$> P.sepEndBy
                                             (
-{-# LINE 557 "ccweb.org" #-}
+{-# LINE 311 "ccweb.org" #-}
                                              do
                                                k <- symbol <* (spaces1 <|> (spaces *> P.char '=' *> spaces))
                                                v <- parse :: Parser SExpr
                                                return (k, v)
-{-# LINE 551 "ccweb.org" #-}
+{-# LINE 305 "ccweb.org" #-}
                                                             )
                                             spaces1)
-{-# LINE 544 "ccweb.org" #-}
+{-# LINE 298 "ccweb.org" #-}
                               return $ Map.singleton p kvs
-{-# LINE 732 "ccweb.org" #-}
+{-# LINE 486 "ccweb.org" #-}
       titleKeyword = do
         keywordStart "#+TITLE:"
         TitleKeyword <$> parse
@@ -793,12 +793,12 @@ instance Parse Keyword where
         _ <- endOfLine
         return $ OtherKeyword t
       keywordStart h = void $ P.try (P.string h *> spaces)
-{-# LINE 745 "ccweb.org" #-}
+{-# LINE 499 "ccweb.org" #-}
 headerProperties :: [Keyword] -> Properties
 headerProperties = foldl acc mempty where
     acc a (PropertyKeyword p) = Map.union p a
     acc a _ = a
-{-# LINE 755 "ccweb.org" #-}
+{-# LINE 509 "ccweb.org" #-}
 instance Parse Document where
   parse = do
     --parserTrace "Document: Parsing keywords"
@@ -812,7 +812,7 @@ instance Parse Document where
       { keywords = hs
       , sections = ss
       }
-{-# LINE 772 "ccweb.org" #-}
+{-# LINE 526 "ccweb.org" #-}
 readOrgFile :: LogLevel -> FilePath -> IO (OrgLines, Document)
 readOrgFile lvl fp = do
   ingested <- fromList <$> ingest fp :: IO OrgLines
@@ -823,7 +823,7 @@ readOrgFile lvl fp = do
         fp
         ingested
   return (ingested, doc)
-{-# LINE 239 "ccweb.org" #-}
+{-# LINE 43 "org/scaffold.org" #-}
 data Options = Options
   { optionQuiet :: Bool
   , optionVerbosity :: Int
@@ -833,7 +833,7 @@ data Options = Options
   , inputFile :: String
   }
 
-{-# LINE 248 "ccweb.org" #-}
+{-# LINE 52 "org/scaffold.org" #-}
 instance Pretty Options where
   pretty o = pretty $ PrettyStruct "Options"
     [ ("quiet", pretty $ optionQuiet o)
@@ -844,20 +844,20 @@ instance Pretty Options where
     , ("input file", pretty $ inputFile o)
     ]
 
-{-# LINE 258 "ccweb.org" #-}
+{-# LINE 62 "org/scaffold.org" #-}
 userOptionParser :: O.Parser Options
 userOptionParser = Options
   <$> (
-{-# LINE 283 "ccweb.org" #-}
+{-# LINE 87 "org/scaffold.org" #-}
        O.switch
          ( O.short 'q'
            <> O.long "quiet"
            <> O.help "Only print things that were asked for."
          )
-{-# LINE 260 "ccweb.org" #-}
+{-# LINE 64 "org/scaffold.org" #-}
           )
   <*> (
-{-# LINE 292 "ccweb.org" #-}
+{-# LINE 96 "org/scaffold.org" #-}
        length
        <$>
        O.many
@@ -866,34 +866,34 @@ userOptionParser = Options
              <> O.long "verbose"
              <> O.help "Be verbose. Can be given multiple times for more verbosity."
            ))
-{-# LINE 261 "ccweb.org" #-}
+{-# LINE 65 "org/scaffold.org" #-}
              )
   <*> dryRunParser
   <*> 
-{-# LINE 321 "ccweb.org" #-}
+{-# LINE 125 "org/scaffold.org" #-}
       O.switch
         ( O.short 'I'
         <> O.long "list-input-files"
         <> O.help "If given, list the files that have to be read in, one per line."
         )
-{-# LINE 264 "ccweb.org" #-}
+{-# LINE 68 "org/scaffold.org" #-}
   <*> 
-{-# LINE 312 "ccweb.org" #-}
+{-# LINE 116 "org/scaffold.org" #-}
       O.switch
         ( O.short 'O'
         <> O.long "list-output-files"
         <> O.help "If given, list the files that would be written out, one per line."
         )
-{-# LINE 265 "ccweb.org" #-}
+{-# LINE 69 "org/scaffold.org" #-}
   <*> (
-{-# LINE 304 "ccweb.org" #-}
+{-# LINE 108 "org/scaffold.org" #-}
        O.argument O.str
          ( O.metavar "FILE"
          <> O.help "The name of the input file."
          )
-{-# LINE 265 "ccweb.org" #-}
+{-# LINE 69 "org/scaffold.org" #-}
           )
-{-# LINE 270 "ccweb.org" #-}
+{-# LINE 74 "org/scaffold.org" #-}
 logLevel :: Options -> LogLevel
 logLevel Options{ optionQuiet = q, optionVerbosity = v } =
   case (if q then 0 else 3) + v of
@@ -903,14 +903,14 @@ logLevel Options{ optionQuiet = q, optionVerbosity = v } =
     3 -> Info
     4 -> Debug
     _ -> Trace
-{-# LINE 330 "ccweb.org" #-}
+{-# LINE 134 "org/scaffold.org" #-}
 dryRunParser :: O.Parser Bool
 dryRunParser = O.switch
   ( O.short 'n'
   <> O.long "dry-run"
   <> O.help "If given, do not write any files. Useful when debugging."
   )
-{-# LINE 79 "org/parser.org" #-}
+{-# LINE 123 "org/parser.org" #-}
 fromEither :: Pretty a => Either a b -> b
 fromEither = either (error . PP.render . pretty) id
 {-# LINE 10 "org/tangle.org" #-}

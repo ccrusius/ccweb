@@ -1,0 +1,253 @@
+* Scaffolding
+
+** Logging
+
+#+NAME: Logging
+#+BEGIN_SRC haskell
+data LogLevel = Quiet | Error | Warning | Info | Debug | Trace deriving (Eq,Show)
+
+instance Ord LogLevel where
+  (<=) _ Trace = True
+  (<=) Trace _ = False
+  (<=) _ Debug = True
+  (<=) Debug _ = False
+  (<=) _ Info = True
+  (<=) Info _ = False
+  (<=) _ Warning = True
+  (<=) Warning _ = False
+  (<=) _ Error = True
+  (<=) Error _ = False
+  (<=) Quiet Quiet = True
+
+instance Pretty LogLevel where
+  pretty = PP.text . show
+
+logM :: Pretty a => LogLevel -> LogLevel -> a -> IO ()
+logM lvl minLvl = when (lvl >= minLvl) . putStrLn . PP.render . pretty
+#+END_SRC
+
+** User Options
+
+#+NAME: Imports
+#+BEGIN_SRC haskell
+import qualified Options.Applicative as O
+#+END_SRC
+
+#+NAME: stack-packages
+#+BEGIN_SRC shell
+--package optparse-applicative
+#+END_SRC
+
+#+NAME: Command-line-options
+#+BEGIN_SRC haskell
+data Options = Options
+  { optionQuiet :: Bool
+  , optionVerbosity :: Int
+  , dryRun :: Bool
+  , listInputFiles :: Bool
+  , listOutputFiles :: Bool
+  , inputFile :: String
+  }
+
+instance Pretty Options where
+  pretty o = pretty $ PrettyStruct "Options"
+    [ ("quiet", pretty $ optionQuiet o)
+    , ("verbosity", pretty $ optionVerbosity o)
+    , ("dry-run", pretty $ dryRun o)
+    , ("list-input-files", pretty $ listInputFiles o)
+    , ("list-output-files", pretty $ listOutputFiles o)
+    , ("input file", pretty $ inputFile o)
+    ]
+
+userOptionParser :: O.Parser Options
+userOptionParser = Options
+  <$> (<<Parse the =-q= user flag>>)
+  <*> (<<Parse the =-v= user flag>>)
+  <*> dryRunParser
+  <*> <<The =-I= command line flag>>
+  <*> <<The =-O= command line flag>>
+  <*> (<<Parse input file name>>)
+#+END_SRC
+
+#+NAME: Command-line-options
+#+BEGIN_SRC haskell
+logLevel :: Options -> LogLevel
+logLevel Options{ optionQuiet = q, optionVerbosity = v } =
+  case (if q then 0 else 3) + v of
+    0 -> Quiet
+    1 -> Error
+    2 -> Warning
+    3 -> Info
+    4 -> Debug
+    _ -> Trace
+#+END_SRC
+
+#+NAME: Parse the =-q= user flag
+#+BEGIN_SRC haskell
+O.switch
+  ( O.short 'q'
+    <> O.long "quiet"
+    <> O.help "Only print things that were asked for."
+  )
+#+END_SRC
+
+#+NAME: Parse the =-v= user flag
+#+BEGIN_SRC haskell
+length
+<$>
+O.many
+  ( O.flag' ()
+    ( O.short 'v'
+      <> O.long "verbose"
+      <> O.help "Be verbose. Can be given multiple times for more verbosity."
+    ))
+#+END_SRC
+
+#+NAME: Parse input file name
+#+BEGIN_SRC haskell
+O.argument O.str
+  ( O.metavar "FILE"
+  <> O.help "The name of the input file."
+  )
+#+END_SRC
+
+#+NAME: The =-O= command line flag
+#+BEGIN_SRC haskell
+O.switch
+  ( O.short 'O'
+  <> O.long "list-output-files"
+  <> O.help "If given, list the files that would be written out, one per line."
+  )
+#+END_SRC
+
+#+NAME: The =-I= command line flag
+#+BEGIN_SRC haskell
+O.switch
+  ( O.short 'I'
+  <> O.long "list-input-files"
+  <> O.help "If given, list the files that have to be read in, one per line."
+  )
+#+END_SRC
+
+#+NAME: Command-line-options
+#+BEGIN_SRC haskell
+dryRunParser :: O.Parser Bool
+dryRunParser = O.switch
+  ( O.short 'n'
+  <> O.long "dry-run"
+  <> O.help "If given, do not write any files. Useful when debugging."
+  )
+#+END_SRC
+
+** A Basic Stack
+
+We will need a stack in various places. Apart from the obvious
+operations (~top~, ~push~, and ~pop~), we want to be able to resize the
+stack, either removing elements, or replicating the top element until
+the desired size is reached.
+
+#+NAME: Parser
+#+BEGIN_SRC haskell
+newtype Stack a = Stack [a]
+
+instance Pretty a => Pretty (Stack a) where
+  pretty (Stack xs) = pretty xs
+
+top :: Stack a -> a
+top (Stack xs) = head xs
+
+push :: a -> Stack a -> Stack a
+push x (Stack xs) = Stack $ x:xs
+
+pop :: Stack a -> Stack a
+pop (Stack []) = error $ "popping empty stack"
+pop (Stack (_:xs)) = Stack xs
+
+resize :: Int -> Stack a -> Stack a
+resize i (Stack xs)
+  | i == l = Stack xs
+  | i < l = Stack $ reverse . take i . reverse $ xs
+  | i > l && l > 0 = Stack $ replicate (i - l) (head xs) ++ xs
+  | otherwise = error $ "resizing empty stack"
+  where
+    l = length xs
+#+END_SRC
+
+** Pretty-Printing
+
+#+NAME: Imports
+#+BEGIN_SRC haskell
+import qualified Text.PrettyPrint as PP
+#+END_SRC
+
+#+NAME: stack-packages
+#+BEGIN_SRC shell
+--package pretty
+#+END_SRC
+
+#+NAME: Pretty printing
+#+BEGIN_SRC haskell
+class Pretty a where
+  pretty :: a -> PP.Doc
+  prettyList :: [a] -> PP.Doc
+  prettyList = PP.brackets . PP.fcat . PP.punctuate PP.comma . map pretty
+
+instance Pretty PP.Doc where
+  pretty = id
+
+instance Pretty Bool where
+  pretty True = PP.text "True"
+  pretty False = PP.text "False"
+
+instance Pretty Char where
+  pretty = PP.char
+  prettyList = PP.text
+
+instance Pretty Int where
+  pretty = PP.int
+
+instance Pretty a => Pretty (Maybe a) where
+  pretty Nothing = PP.text "Nothing"
+  pretty (Just a) = pretty a
+
+instance (Pretty a, Pretty b) => Pretty (a,b) where
+  pretty (a,b) = PP.parens . PP.fcat . PP.punctuate PP.comma $ [pretty a, pretty b]
+
+instance Pretty a => Pretty [a] where
+  pretty = prettyList
+
+instance Pretty P.ParseError where
+  pretty = PP.text . show
+#+END_SRC
+
+#+NAME: Pretty printing
+#+BEGIN_SRC haskell
+instance (Pretty k, Pretty v) => Pretty (Map.Map k v) where
+  pretty = PP.brackets
+           . PP.fcat
+           . PP.punctuate PP.comma
+           . map (\(k,v) -> pretty k PP.<> PP.equals PP.<> pretty v)
+           . Map.toList
+#+END_SRC
+
+#+NAME: Pretty printing
+#+BEGIN_SRC haskell
+data PrettyStruct = PrettyStruct String [(String, PP.Doc)]
+
+instance Pretty PrettyStruct where
+  pretty (PrettyStruct t ps) =
+    let fields = map (\(n,p) -> PP.text n PP.<> PP.colon PP.<+> p) ps
+    in PP.text t PP.<> PP.braces (PP.fcat $ PP.punctuate PP.comma fields)
+
+prettyStruct :: String -> [(String, (a -> PP.Doc))] -> a -> PP.Doc
+prettyStruct name kfs a = pretty (PrettyStruct name (map (\(k,f) -> (k,f a)) kfs))
+#+END_SRC
+
+#+NAME: Pretty printing
+#+BEGIN_SRC haskell
+instance Pretty P.SourcePos where
+  pretty p = pretty (P.sourceName p)
+             PP.<> PP.colon PP.<> pretty (P.sourceLine p)
+             PP.<> PP.colon PP.<> pretty (P.sourceColumn p)
+#+END_SRC
+
