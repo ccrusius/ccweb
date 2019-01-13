@@ -52,6 +52,32 @@ when (listInputFiles opts)  $ mapM_ putStrLn (
   )
 #+END_SRC
 
+#+NAME: Get list of blocks referenced in document
+#+BEGIN_SRC haskell
+map (<<Get list of blocks referenced by section>>) . orgSections
+:: Document -> [(Section,[SourceBlockId])]
+#+END_SRC
+
+#+NAME: Get list of blocks referenced by section
+#+BEGIN_SRC haskell
+fromMaybe [] .
+((<<Get list of blocks referenced by source block>>) <$> sectionSourceBlock)
+:: Section -> [SourceBlockId]
+#+END_SRC
+
+#+NAME: Get list of blocks referenced by source block
+#+BEGIN_SRC haskell
+concatMap (<<Get list of blocks referenced in code line>>) . blockLines
+:: SourceBlock -> [SourceBlockId]
+#+END_SRC
+
+
+#+NAME: Get list of blocks referenced in code line
+#+BEGIN_SRC haskell
+mapMaybe (\case{ (SectionReference _ t) -> Just (NamedBlock t);  _ -> Nothing })
+:: CodeLine -> [SourceBlockId]
+#+END_SRC
+
 #+NAME: Weaver
 #+BEGIN_SRC haskell
 data WeaveState = WeaveState
@@ -116,8 +142,8 @@ instance Weave Section where
   weave s = do
     header <- (<<Weave section ~s~ headline>>) :: Weaver String
     text <- (<<Weave section ~s~ body>>) :: Weaver [String]
-    code <- (<<Weave section ~s~ code>>) :: Weaver [String]
-    return $ unlines (header : text) ++ unlines code ++ "\\fi\n"
+    code <- (<<Weave section ~s~ code>>) :: Weaver String
+    return $ unlines (header : text) ++ code ++ "\\fi\n"
 #+END_SRC
 
 #+NAME: Weave section ~s~ headline
@@ -151,6 +177,7 @@ case sectionSourceBlock s of
         firstNo = sectionNumber . head <$> sections
         secno = sectionNumber s
     n <- (<<Weave section reference>>) s :: Weaver String
+    ls <- mapM weave (blockLines b) :: Weaver [String]
     let head = concat
           [ if null text then [] else "\\Y"
           , "\\B\\4"
@@ -159,23 +186,42 @@ case sectionSourceBlock s of
           , if secno == fromMaybe 0 firstNo then [] else "\\mathrel+"
           , "\\equiv{}$"
           ]
-    return $ head : []
+    return $ intercalate "\\6" (head : ls) ++ "\\par"
+#+END_SRC
+
+#+NAME: Weaver
+#+BEGIN_SRC haskell
+instance Weave CodeElement where
+  weave (Literal _ s) = do
+    s' <- concatMapM weave s
+    return $ "\\hbox{\\tentex "
+      ++ map (\c -> if c == ' ' then '~' else c) s'
+      ++ "}"
+  weave (SectionReference _ r) = weave (NamedBlock r)
+#+END_SRC
+
+#+NAME: Weaver
+#+BEGIN_SRC haskell
+instance Weave CodeLine where
+  weave (CodeLine _ es) = concatMapM weave es
 #+END_SRC
 
 #+NAME: Weave section reference
 #+BEGIN_SRC haskell
-\ref -> do
-  tangledName <- case sourceBlockId b of
-    Nothing -> return "$\\bullet$"
-    Just (FileBlock file) -> ("$\\Rightarrow\\,$" ++) <$> weave (Verbatim file)
-    Just (NamedBlock name) -> weave name
-  return . concat $
-    [ "\\X"
-    , show . fromMaybe 9999 $ firstNo
-    , ":"
-    , tangledName
-    , "\\X"
-    ]
+\ref -> case sourceBlockId (fromJust $ sectionSourceBlock ref) of
+         Nothing -> return "\\X:$\\bullet$\\X"
+         Just id -> weave id
+#+END_SRC
+
+#+NAME: Weaver
+#+BEGIN_SRC haskell
+instance Weave SourceBlockId where
+  weave id = do
+    firstNo <- sectionNumber . head . (flip (Map.!) id) . docPartition <$> get
+    tangledName <- case id of
+      FileBlock file -> ("$\\Rightarrow\\,$" ++) <$> weave (Verbatim file)
+      NamedBlock name -> weave name
+    return . concat $ ["\\X", show firstNo, ":", tangledName, "\\X"]
 #+END_SRC
 
 #+NAME: Weaver
