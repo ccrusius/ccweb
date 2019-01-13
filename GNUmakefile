@@ -17,12 +17,12 @@ define STACK_PREAMBLE
   --package containers
   --package hostname
   --package mtl
+  --package parsec
   --package filepath
   --package directory
   --package unix
   --package pretty
   --package optparse-applicative
-  --package parsec
 -}
 endef
 
@@ -45,7 +45,7 @@ ${OUTPUT_FILES}: ${SOURCE_FILES}
 	${BOOTSTRAP_TANGLER} ccweb.org
 bin/%tangle bin/%weave: bin/cctangle.hs bin/ccweave.hs
 	@rm -f $@
-	stack build --trace
+	stack build -j2 --trace
 	cp `stack exec -- which ccweave` bin/ccweave
 	cp `stack exec -- which cctangle` bin/cctangle
 DIFF := git --no-pager diff --no-index

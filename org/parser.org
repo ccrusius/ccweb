@@ -1,0 +1,257 @@
+* Lines of Input
+
+Before parsing an Org file into a ~Document~, we read its contents as
+lines, expanding all the =#+INCLUDE= directives while at it. The end
+result will be a list of lines where each line will contain the name
+of the file it came from, and the line number in that file.
+
+#+NAME: Parser
+#+BEGIN_SRC haskell
+data OrgLine = OrgLine P.SourcePos String
+#+END_SRC
+
+As we will see later, these lines may end up having a terminating
+=NUL= character, so pretty-printing them requires filtering it out.
+
+#+NAME: Pretty printing
+#+BEGIN_SRC haskell
+instance Pretty OrgLine where
+  pretty (OrgLine p l) =
+    PP.hcat [pretty p, PP.colon, PP.text (takeWhile (/= '\NUL') l)]
+#+END_SRC
+
+Now to ingesting those lines. The parser we are going to use for both
+ingesting and final parsing is =Parsec=.
+
+#+NAME: Imports
+#+BEGIN_SRC haskell
+import qualified Text.Parsec as P
+import qualified Text.Parsec.Pos as P
+#+END_SRC
+
+The Stack package for the boostrapper is =parsec=.
+
+#+NAME: stack-packages
+#+BEGIN_SRC shell
+--package parsec
+#+END_SRC
+
+Ingesting a file is a matter of reading all of its lines, then recursively
+replacing any =#+INCLUDE= directives by the files they
+reference. Reading a file's lines can be done with the prelude's
+~readFile~ and ~lines~ functions.
+
+#+NAME: Parser
+#+BEGIN_SRC haskell
+ingest :: FilePath -> IO [OrgLine]
+ingest file = do
+    zipWith OrgLine [P.newPos file l 0 | l <- [1..]] . lines
+      <$> readFile file
+      >>= foldrM scan []
+  where
+    scan l@(OrgLine pos s) ls =
+      maybe (return (l : ls)) (fmap (++ ls) . ingest)
+      $ (<<Parse an ~#+INCLUDE~ directive>> :: String -> Maybe FilePath) s
+#+END_SRC
+
+We invoke a parser to check whether the line is an =#+INCLUDE= line or
+not, taking the precaution to set the position of the string to parse
+to the correct position in the input file, so that errors are
+properly reported.
+
+#+NAME: Parse an ~#+INCLUDE~ directive
+#+BEGIN_SRC haskell
+fromEither . P.parse
+(P.setPosition pos *>
+    P.optionMaybe (
+      P.try (P.spaces *> P.string "#+INCLUDE:" *> P.spaces)
+      *> P.char '"'
+      *> P.manyTill anyChar (P.char '"')
+    ))
+(P.sourceName pos)
+#+END_SRC
+
+The ~fromEither~ function above returns a successful result, or errors out
+by pretty-printing the error. We will use it a handful of times more later.
+
+#+NAME: Common =CCWEB= code
+#+BEGIN_SRC haskell
+fromEither :: Pretty a => Either a b -> b
+fromEither = either (error . PP.render . pretty) id
+#+END_SRC
+
+We also used an ~anyChar~ parser above. It is similar to the one
+defined by =Parsec=, except it does not cross line boundaries.
+
+#+NAME: Parser
+#+BEGIN_SRC haskell
+anyChar :: (P.Stream s m Char) => P.ParsecT s u m Char
+anyChar = P.noneOf "\n\r"
+#+END_SRC
+
+Now that we have an Org file ingested into a list of ~OrgLine~, we
+need to make those available for the next parser as a ~P.Stream~.
+While doing that, we will force the lines to end with a newline, be it
+there to begin with or not. The trick here is to distinguish
+between an empty line and a line that just got emptied after a
+newline, and I do that by marking the actual end of the line with the
+traditional (in other languages) =NUL= terminator.
+
+#+NAME: Parser
+#+BEGIN_SRC haskell
+instance Monad m => P.Stream OrgLine m Char where
+  uncons (<<Empty ~OrgLine~>>) =
+    return Nothing
+  uncons (OrgLine p []) =
+    return $ Just ('\n', OrgLine (P.updatePosChar p '\n') "\NUL")
+  uncons (OrgLine p (x:xs)) =
+    return $ Just (x, OrgLine (P.updatePosChar p x) xs)
+#+END_SRC
+
+Any line with =NUL= as its first character is considered empty.
+
+#+NAME: Empty ~OrgLine~
+#+BEGIN_SRC haskell
+OrgLine _ ('\NUL':_)
+#+END_SRC
+
+The next piece of the ~P.Stream~ puzzle is to support lists of
+~OrgLine~. We can't simply declare ~[OrgLine]~ an instance of ~Stream~
+because that would conflict with then instance =Parsec= declares for
+tokens. We get around it by wrapping the list in a new type.
+
+#+NAME: Parser
+#+BEGIN_SRC haskell
+newtype OrgLines = OrgLines [OrgLine]
+#+END_SRC
+
+This is now turned into a ~Stream~. In order to be able to obtain
+valid positions for the end of file, I make sure to mark the end of
+the stream based on the ~OrgLines~ having a single empty string left.
+
+#+NAME: Parser
+#+BEGIN_SRC haskell
+instance Monad m => P.Stream OrgLines m Char where
+  uncons (OrgLines (<<Empty ~OrgLine~>>:[])) = return Nothing
+  uncons (OrgLines (x:xs)) = P.uncons x >>= \case
+    Nothing -> P.uncons (fromList xs :: OrgLines)
+    Just (x',xs') -> return $ Just (x', OrgLines (xs':xs))
+  uncons (OrgLines []) =
+    error $ "(internal): uncons of empty OrgLines instance"
+#+END_SRC
+
+* Parsing
+
+We will do some extra work during parsing to avoid multiple passes
+over the structure, and in order to do that we will keep some
+state. This state will contain the host name (used when evaluating
+s-expressions), the log level specified by the user, a property stack,
+and the current section number.
+
+#+NAME: Parser
+#+BEGIN_SRC haskell
+data ParserState = ParserState
+  { sectionCounter :: Int
+  , propertyStack  :: Stack Properties
+  , hostName       :: String
+  , parserLogLevel :: LogLevel
+  }
+#+END_SRC
+
+As with other things, we pretty-print it as a map.
+
+#+NAME: Pretty printing
+#+BEGIN_SRC haskell
+instance Pretty ParserState where
+  pretty = prettyStruct "ParserState"
+    [ ("counter", pretty . sectionCounter)
+    , ("host", pretty . hostName)
+    , ("log level", pretty . parserLogLevel)
+    , ("property stack", pretty . propertyStack)
+    ]
+#+END_SRC
+
+Based on this state, we define the main parser type, and a type class
+to be instantiated by all things that know how to parse themselves.
+
+#+NAME: Parser
+#+BEGIN_SRC haskell
+type Parser = P.Parsec OrgLines ParserState
+
+class Parse a where
+  parse :: Parser a
+#+END_SRC
+
+** Basic Parsers
+
+When we talk about whitespace, we will be talking about
+/horizontal whitespace/. The =Parsec= parsers don't have those, so we
+implement them ourselves.
+
+#+NAME: Parser
+#+BEGIN_SRC haskell
+space :: Parser Char
+space = P.satisfy (\c -> isSpace c && notElem c "\n\r")
+
+spaces :: Parser String
+spaces = P.many space
+
+spaces1 :: Parser String
+spaces1 = P.many1 space
+#+END_SRC
+
+There will be a few places where we will need to parse a /symbol/,
+which we fuzzily consider to be a ``variable name.'' The ~=~
+character, for example, is a valid Lisp symbol name, but not a valid
+Org property name.
+
+#+NAME: Parser
+#+BEGIN_SRC haskell
+symbolChar :: Parser Char
+symbolChar = P.satisfy (\c -> isPrint c && not (isSpace c) && notElem c "()=")
+
+symbol :: Parser String
+symbol = P.many1 symbolChar
+#+END_SRC
+
+In order to make use of the positions reported by an ~OrgLines~
+stream, we need to re-define a few basic =Parsec= parsers. The only
+meaningful change is in ~satisfy~. The standard implementation updates
+the position according to the character just consumed, meaning the
+parser always ``thinks'' it is in the same file. Our implementation
+will use the location stored in the current ~OrgLine~, each of which
+may come from a different file.
+
+#+NAME: Parser
+#+BEGIN_SRC haskell
+satisfy :: (Char -> Bool) -> Parser Char
+satisfy f = P.tokenPrim
+            (\c -> show [c])
+            (\pos _ (OrgLines rest) ->
+               case rest of
+                 (OrgLine pos' _):_ -> pos'
+                 [] -> error $ show pos ++ ": (internal) empty OrgLines")
+            (\c -> if f c then Just c else Nothing)
+#+END_SRC
+
+The only parser we /really/ need to re-define is ~endOfLine~, because
+it is only when changing lines that positions can switch from one
+source file to another in an ~OrgLine~. We will do it by replicating
+the relevant =Parsec= definitions, substituting our ~satisfy~ in the
+only place where it shows up.
+
+#+NAME: Parser
+#+BEGIN_SRC haskell
+char :: Char -> Parser Char
+char c = satisfy (==c) P.<?> show [c]
+
+newline :: Parser Char
+newline = char '\n' P.<?> "lf new-line"
+
+crlf :: Parser Char
+crlf = char '\r' *> char '\n' P.<?> "crlf new-line"
+
+endOfLine :: Parser Char
+endOfLine = newline <|> crlf P.<?> "new-line"
+#+END_SRC
+

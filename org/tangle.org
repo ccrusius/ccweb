@@ -233,13 +233,20 @@ tangleCodeLine (CodeLine _ elements) =
     initialIndent <- getIndent
     ls <- removeLeadingEmptyLine . <<Tangle all ~element~s>>
     modify (\s -> s{ indent = initialIndent })
-    getTopBlock >>= maybeAddLinePragma ls (getPosition $ head elements)
+    getTopBlock >>= maybeAddLinePragma ls ((<<Get position of code element>>) $ head elements)
       where
         removeLeadingEmptyLine :: [Line] -> [Line]
         removeLeadingEmptyLine a@(CodeText l:p@(LinePragma _ _):ls)
           | all isSpace l = p:ls
           | otherwise = a
         removeLeadingEmptyLine a = a
+#+END_SRC
+
+#+NAME: Get position of code element
+#+BEGIN_SRC haskell
+\case
+  (Literal p _) -> p
+  (SectionReference p _) -> p
 #+END_SRC
 
 It will be useful to be able to separate the accumulated lines into a

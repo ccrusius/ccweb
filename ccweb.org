@@ -112,6 +112,8 @@ resize i (Stack xs)
 
 #+INCLUDE: "org/doc.org"
 
+#+INCLUDE: "org/parser.org"
+
 #+INCLUDE: "org/tangle.org"
 
 #+INCLUDE: "org/weave.org"
@@ -335,44 +337,8 @@ dryRunParser = O.switch
 
 * Parsing an Org File
 
-I parse Org files with =Parsec=.
-
-#+NAME: Imports
-#+BEGIN_SRC haskell
-import qualified Text.Parsec as P
-import qualified Text.Parsec.Pos as P
-#+END_SRC
-
-#+NAME: stack-packages
-#+BEGIN_SRC shell
---package parsec
-#+END_SRC
-
 #+NAME: Parser
 #+BEGIN_SRC haskell
-type Parser = P.Parsec OrgFile ParserState
-
-class Parse a where
-  parse :: Parser a
-#+END_SRC
-
-#+NAME: Parser
-#+BEGIN_SRC haskell
-data ParserState = ParserState
-  { sectionCounter :: Int
-  , propertyStack  :: Stack Properties
-  , hostName       :: String
-  , parserLogLevel :: LogLevel
-  }
-
-instance Pretty ParserState where
-  pretty s = pretty $ PrettyStruct "ParserState"
-      [ ("counter", pretty (sectionCounter s))
-      , ("host", pretty (hostName s))
-      , ("log level", pretty (parserLogLevel s))
-      , ("property stack", pretty (propertyStack s))
-      ]
-
 initialParserState :: ParserState
 initialParserState = ParserState
   { sectionCounter = 0
@@ -395,228 +361,35 @@ parserDebug l s = do
 
 parserTrace :: Pretty a => a -> Parser ()
 parserTrace l = do
-  (OrgFile ls) <- P.stateInput <$> P.getParserState
+  (OrgLines ls) <- P.stateInput <$> P.getParserState
   u <- P.getState
   let user = pretty "user state" PP.<> PP.colon PP.<> pretty u
       input = pretty "looking at" PP.<> PP.colon PP.<> pretty (take 3 ls)
   parserDebug l (PP.fcat [user, input])
 #+END_SRC
 
-** Position in the Source
-
-#+NAME: Parser
-#+BEGIN_SRC haskell
-class Location a where
-  newPosition :: P.SourcePos -> Char -> a -> P.SourcePos
-  getPosition :: a -> P.SourcePos
-  getPosition = error $ "getPosition not implemented"
-#+END_SRC
-
-#+NAME: Parser
-#+BEGIN_SRC haskell
-instance Location String where
-  newPosition pos c _cs = P.updatePosChar pos c
-#+END_SRC
-
 ** Lines of Input
 
 #+NAME: Parser
 #+BEGIN_SRC haskell
-data OrgLine = OrgLine P.SourcePos String
-
-instance Location OrgLine where
-  getPosition (OrgLine p _) = p
-  newPosition _ _ (OrgLine p _) = p
-#+END_SRC
-
-In order to feed ~OrgLine~s into a parser I need to turn them into
-~P.Stream~s. While doing that, I force the stream to end with a
-newline, be it there to begin with or not. The trick here is to
-distinguish between an empty line and a line that just got emptied
-after a newline, and I do that by marking the actual end of the line
-with the traditional null terminator.
-
-#+NAME: Empty ~OrgLine~
-#+BEGIN_SRC haskell
-OrgLine _ ('\NUL':_)
-#+END_SRC
-
-#+NAME: Parser
-#+BEGIN_SRC haskell
-instance Monad m => P.Stream OrgLine m Char where
-  -- The actual end of the stream
-  uncons (<<Empty ~OrgLine~>>) =
-    return Nothing
-  -- An empty string --- insert last newline
-  uncons (OrgLine p []) =
-    return $ Just ('\n', OrgLine (P.updatePosChar p '\n') "\NUL")
-  -- Uncons a character
-  uncons (OrgLine p (x:xs)) =
-    return $ Just (x, OrgLine (P.updatePosChar p x) xs)
-#+END_SRC
-
-With the above in mind, I filter out =NUL=s when pretty-printing an ~OrgLine~.
-
-#+NAME: Pretty printing
-#+BEGIN_SRC haskell
-instance Pretty OrgLine where
-  pretty (OrgLine p l) =
-    pretty p
-    PP.<> PP.colon
-    PP.<> PP.text (takeWhile (/= '\NUL') l)
-#+END_SRC
-
-To deal with streams of ~[OrgLine]~ I have to define a new type,
-otherwise there is a conflict with another =Stream= definition.
-
-#+NAME: Parser
-#+BEGIN_SRC haskell
-newtype OrgFile = OrgFile [OrgLine]
-#+END_SRC
-
-In order to be able to obtain valid positions for the end of file, I
-make sure to mark the end of the stream based on the ~OrgFile~ having
-a single empty string left.
-
-#+NAME: Parser
-#+BEGIN_SRC haskell
-instance Monad m => P.Stream OrgFile m Char where
-  uncons (OrgFile (<<Empty ~OrgLine~>>:[])) = return Nothing
-  uncons (OrgFile (x:xs)) = P.uncons x >>= \case
-    Nothing -> P.uncons (fromList xs :: OrgFile)
-    Just (x',xs') -> return $ Just (x', OrgFile (xs':xs))
-  uncons (OrgFile []) =
-    error $ "(internal): uncons of empty OrgFile instance"
-#+END_SRC
-
-#+NAME: Parser
-#+BEGIN_SRC haskell
-instance Location OrgFile where
-  getPosition (OrgFile (x:_)) = getPosition x
-  getPosition _ = error $ "(internal) getPosition of empty OrgFile"
-
-  newPosition pos c (OrgFile (x:_)) = newPosition pos c x
-  newPosition _ _ (OrgFile []) = error $ "(internal): location of empty OrgFile"
-#+END_SRC
-
-#+NAME: Parser
-#+BEGIN_SRC haskell
-instance IsList OrgFile where
-  type Item OrgFile = OrgLine
-  fromList xs = OrgFile xs
-  toList (OrgFile xs) = xs
+instance IsList OrgLines where
+  type Item OrgLines = OrgLine
+  fromList xs = OrgLines xs
+  toList (OrgLines xs) = xs
 #+END_SRC
 
 #+NAME: Pretty printing
 #+BEGIN_SRC haskell
-instance Pretty OrgFile where
-  pretty (OrgFile ls) = pretty ls
+instance Pretty OrgLines where
+  pretty (OrgLines ls) = pretty ls
 #+END_SRC
 
 ** Basic Parsers
-
-In order to use the positions reported by the streams above, I need to
-re-define a few basic =Parsec= parsers. The only meaningful change is
-in ~satisfy~.
-
-#+NAME: Parser
-#+BEGIN_SRC haskell
-satisfy :: (Location s, P.Stream s m Char) => (Char -> Bool) -> P.ParsecT s u m Char
-satisfy f = P.tokenPrim
-            (\c -> show [c])
-            (\pos c cs -> newPosition pos c cs)
-            (\c -> if f c then Just c else Nothing)
-#+END_SRC
-
-The only parser I /really/ need to re-define is ~endOfLine~, because
-it is only when changing lines that positions can switch from one
-source file to another in an ~OrgLine~. I do it by replicating the
-relevant =Parsec= definitions, substituting my ~satisfy~ in the only
-place where it shows up.
-
-#+NAME: Parser
-#+BEGIN_SRC haskell
-char :: (Location s, P.Stream s m Char) => Char -> P.ParsecT s u m Char
-char c = satisfy (==c) P.<?> show [c]
-
-newline :: (Location s, P.Stream s m Char) => P.ParsecT s u m Char
-newline = char '\n' P.<?> "lf new-line"
-
-crlf :: (Location s, P.Stream s m Char) => P.ParsecT s u m Char
-crlf = char '\r' *> char '\n' P.<?> "crlf new-line"
-
-endOfLine :: (Location s, P.Stream s m Char) => P.ParsecT s u m Char
-endOfLine = newline <|> crlf P.<?> "new-line"
-#+END_SRC
-
-There is no Org file element that crosses line boundaries, so I also
-re-define ~anyChar~ to mean any no-newline character. I also redefine
-spaces as meaning any space that is not also a newline character.
-
-#+NAME: Parser
-#+BEGIN_SRC haskell
-anyChar :: (Location s, P.Stream s m Char) => P.ParsecT s u m Char
-anyChar = P.noneOf "\n\r"
-
-space :: P.Stream s m Char => P.ParsecT s u m Char
-space = P.satisfy (\c -> isSpace c && notElem c "\n\r")
-
-spaces :: P.Stream s m Char => P.ParsecT s u m String
-spaces = P.many space
-
-spaces1 :: P.Stream s m Char => P.ParsecT s u m String
-spaces1 = P.many1 space
-#+END_SRC
-
-#+NAME: Parser
-#+BEGIN_SRC haskell
-symbolChar :: P.Stream s m Char => P.ParsecT s u m Char
-symbolChar = P.satisfy (\c -> isPrint c && not (isSpace c) && notElem c "()=")
-
-symbol :: P.Stream s m Char => P.ParsecT s u m String
-symbol = P.many1 symbolChar
-#+END_SRC
 
 #+NAME: Parser
 #+BEGIN_SRC haskell
 line :: Parser a -> Parser a
 line p = p <* endOfLine
-#+END_SRC
-
-#+NAME: Parser
-#+BEGIN_SRC haskell
-fromEither :: Pretty a => Either a b -> b
-fromEither = either (error . PP.render . pretty) id
-
-ingest :: FilePath -> IO [OrgLine]
-ingest fp = do
-  ls <- fromEither
-       <$> P.parse (P.many1 $ <<Parse a single ~OrgLine~>>) fp
-       <$> readFile fp
-  foldrM scan [] ls
-  where
-    scan l@(OrgLine p s) acc =
-      case fromEither
-           $ P.parse
-           (P.setPosition p *> <<Parse an ~#+INCLUDE~ directive>>)
-           (P.sourceName p) s
-      of
-        Nothing -> return (l : acc)
-        Just fp' -> (++ acc) <$> ingest fp'
-#+END_SRC
-
-#+NAME: Parse a single ~OrgLine~
-#+BEGIN_SRC haskell
-liftA2 OrgLine P.getPosition (P.manyTill anyChar endOfLine)
-#+END_SRC
-
-#+NAME: Parse an ~#+INCLUDE~ directive
-#+BEGIN_SRC haskell
-P.optionMaybe (
-  P.try (P.spaces *> P.string "#+INCLUDE:" *> P.spaces)
-  *> P.char '"'
-  *> P.manyTill anyChar (P.char '"')
-)
 #+END_SRC
 
 ** Emphasis and Monospace
@@ -681,15 +454,6 @@ instance Pretty CodeElement where
 
 #+NAME: Parser
 #+BEGIN_SRC haskell
-instance Location CodeElement where
-  getPosition (Literal p _) = p
-  getPosition (SectionReference p _) = p
-
-  newPosition _ _ _ = error $ "(internal) newPosition of CodeElement"
-#+END_SRC
-
-#+NAME: Parser
-#+BEGIN_SRC haskell
 instance Parse CodeElement where
   parse = literalOr
               (liftA2 Literal P.getPosition . return)
@@ -707,7 +471,7 @@ do
         (parse :: Parser Text)
         initialParserState
         (P.sourceName p)
-        (fromList [l] :: OrgFile)
+        (fromList [l] :: OrgLines)
       r = SectionReference p t
   --parserTrace $ PP.text "Reference parsed" PP.<> PP.colon PP.<> pretty r
   return r
@@ -875,16 +639,16 @@ newlines. The parsers below implement the behaviors I need.
 
 #+NAME: Parser
 #+BEGIN_SRC haskell
-emptyLine :: (Location s, P.Stream s m Char) => P.ParsecT s u m ()
+emptyLine :: Parser ()
 emptyLine = void $ spaces *> endOfLine
 
-skipEmptyLines :: (Location s, P.Stream s m Char) => P.ParsecT s u m ()
+skipEmptyLines :: Parser ()
 skipEmptyLines = P.skipMany (P.try emptyLine)
 #+END_SRC
 
 #+NAME: Parser
 #+BEGIN_SRC haskell
-literalOr :: (Location s, P.Stream s m Char) => (String -> P.ParsecT s u m a) -> P.ParsecT s u m a -> P.ParsecT s u m a
+literalOr :: (String -> Parser a) -> Parser a -> Parser a
 literalOr f p = scan "" where
   scan [] = p <|> (anyChar >>= scan . (:""))
   scan acc =
@@ -899,7 +663,7 @@ the contents to span multiple lines.
 
 #+NAME: Parser
 #+BEGIN_SRC haskell
-enclosed :: (Location s, P.Stream s m Char) => Char -> P.ParsecT s u m String
+enclosed :: Char -> Parser String
 enclosed d = P.try (P.char d) *> P.manyTill anyChar (P.char d)
 #+END_SRC
 
@@ -1005,9 +769,9 @@ instance Parse Document where
 
 #+NAME: Parser
 #+BEGIN_SRC haskell
-readOrgFile :: LogLevel -> FilePath -> IO (OrgFile, Document)
+readOrgFile :: LogLevel -> FilePath -> IO (OrgLines, Document)
 readOrgFile lvl fp = do
-  ingested <- fromList <$> ingest fp :: IO OrgFile
+  ingested <- fromList <$> ingest fp :: IO OrgLines
   h <- getHostName
   let doc = fromEither $ P.runParser
         (parse :: Parser Document)
