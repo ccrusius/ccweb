@@ -307,10 +307,10 @@ instance Parse TextElement where
   parse = do
     parserTrace "TextElement"
     either id Plain <$> eitherMany1
-      ((<<Parse a hyperlink>>) <|> markup)
+      (P.try (<<Parse a hyperlink>>) <|> markup)
       anyChar
     where
-      markup = P.choice $ map (\(t,c) -> t <$> enclosed c)
+      markup = P.choice $ map (\(t,c) -> P.try (t <$> enclosed c))
                [ (Bold, '*')
                , (InlineCode, '~')
                , (Italics, '/')

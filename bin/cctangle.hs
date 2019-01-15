@@ -467,19 +467,19 @@ instance Parse TextElement where
   parse = do
     parserTrace "TextElement"
     either id Plain <$> eitherMany1
-      ((
+      (P.try (
 {-# LINE 325 "org/parser.org" #-}
-        do
-          address <- P.string "[[" *> many1Till anyChar (P.string "][" <|> P.string "]]")
-          sep <- P.string "][" <|> P.string "]]"
-          case sep of
-            "]]" -> return (HyperLink address (Text [Verbatim address]))
-            _    -> HyperLink address <$> textTill (P.string "]]")
+              do
+                address <- P.string "[[" *> many1Till anyChar (P.string "][" <|> P.string "]]")
+                sep <- P.string "][" <|> P.string "]]"
+                case sep of
+                  "]]" -> return (HyperLink address (Text [Verbatim address]))
+                  _    -> HyperLink address <$> textTill (P.string "]]")
 {-# LINE 310 "org/parser.org" #-}
-                                                                  ) <|> markup)
+                                                                        ) <|> markup)
       anyChar
     where
-      markup = P.choice $ map (\(t,c) -> t <$> enclosed c)
+      markup = P.choice $ map (\(t,c) -> P.try (t <$> enclosed c))
                [ (Bold, '*')
                , (InlineCode, '~')
                , (Italics, '/')
