@@ -200,7 +200,7 @@ indentation to it.
 #+NAME: Tangler
 #+BEGIN_SRC haskell
 tangleCodeLine :: CodeLine -> Tangler [Line]
-tangleCodeLine (CodeLine _ []) = (:[]) . CodeText <$> getIndent
+tangleCodeLine (CodeLine []) = (:[]) . CodeText <$> getIndent
 <<Tangle non-empty code line>>
 #+END_SRC
 
@@ -228,7 +228,7 @@ reverse <$> foldlM
 
 #+NAME: Tangle non-empty code line
 #+BEGIN_SRC haskell
-tangleCodeLine (CodeLine _ elements) =
+tangleCodeLine (CodeLine elements) =
   do
     initialIndent <- getIndent
     ls <- removeLeadingEmptyLine . <<Tangle all ~element~s>>

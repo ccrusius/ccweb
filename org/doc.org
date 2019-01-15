@@ -320,7 +320,7 @@ instance HeaderArgs SourceBlock where
 #+END_SRC
 
 Source blocks that are tangled can be uniquely identified from their
-~SourceBlockId~, which is a derived property. We need it to be an
+~SourceBlockId~, which is a computed property. We need it to be an
 instance of ~Ord~ because we want to have them be keys of a map later
 on.
 
@@ -335,10 +335,9 @@ instance Ord SourceBlockId where
   (<=) _ _ = True
 #+END_SRC
 
-The source block ID is a derived property. A block that is not named,
-and is also not tangled to any file, doesn't have one. A file
-destination is specified in the =:tangle= property, which can be
-inherited.
+A block that is not named, and is also not tangled to any file,
+doesn't have a ~SourceBlockId~. Otherwise, it is either its name, or
+the file name, which is specified in the =:tangle= property.
 
 #+NAME: Document data model
 #+BEGIN_SRC haskell
@@ -351,16 +350,37 @@ sourceBlockId block = case headerArg ":tangle" block of
     Just e -> error $ "unsupported tangle destination: " ++ show e
 #+END_SRC
 
+The lines of code that make up a source block contain a mix of literal
+code and section references.
 
 #+NAME: Document data model
 #+BEGIN_SRC haskell
+newtype CodeLine = CodeLine [CodeElement]
 data CodeElement = Literal P.SourcePos String
                  | SectionReference P.SourcePos Text
+#+END_SRC
 
-data CodeLine = CodeLine P.SourcePos [CodeElement]
+The pretty-printing will look very verbose, but one must remember that
+we are pretty-printing for /debugging purposes/. The ``prety
+pretty-printing'' is done by weaving and calling \TeX!
+
+#+NAME: Pretty printing
+#+BEGIN_SRC haskell
+instance Pretty CodeLine where
+  pretty (CodeLine xs) = pretty xs
+
+instance Pretty CodeElement where
+  pretty (Literal p s) =
+    PP.parens $ PP.hcat [pretty p, PP.colon, pretty s]
+  pretty (SectionReference p t) =
+    PP.hcat [pretty p, PP.colon, PP.char '〈', pretty t, PP.char '〉']
 #+END_SRC
 
 ** Text
+
+In the same way as code lines, Org text is represented as a list of
+various types of text elements. The main difference from code lines is
+that there are many more text elements.
 
 #+NAME: Document data model
 #+BEGIN_SRC haskell
@@ -368,6 +388,7 @@ data Text = Text [TextElement] deriving (Eq, Ord, Show)
 
 data TextElement =
   Bold String
+  | HyperLink String Text
   | InlineCode String
   | Italics String
   | Plain String
@@ -375,6 +396,29 @@ data TextElement =
   | TeXMath String
   | Verbatim String
   deriving (Eq, Ord, Show)
+#+END_SRC
+
+We must resist the temptation to pretty-print them back as their Org
+markup representation, because that would be useless for debugging
+purposes.
+
+#+NAME: Pretty printing
+#+BEGIN_SRC haskell
+instance Pretty TextElement where
+  pretty = \case
+    (Bold a)          -> pretty' "bold" a
+    (InlineCode a)    -> pretty' "code" a
+    (Italics a)       -> pretty' "italic" a
+    (Plain a)         -> pretty a
+    (StrikeThrough a) -> pretty' "strike" a
+    (TeXMath a)       -> pretty' "TeX" a
+    (Verbatim a)      -> pretty' "verbatim" a
+    (HyperLink a b)   -> PP.hcat [ pretty "link"
+                                , PP.braces (pretty a)
+                                , PP.braces (pretty b)
+                                ]
+    where
+      pretty' lbl str = PP.hcat [pretty lbl, PP.braces (pretty str)]
 #+END_SRC
 
 ** Operations on Documents

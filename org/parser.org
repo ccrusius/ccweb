@@ -44,10 +44,12 @@ class Parse a where
 
 ** Lines of Input
 
-Before parsing an Org file into a ~Document~, we read its contents as
-lines, expanding all the =#+INCLUDE= directives while at it. The end
-result will be a list of lines where each line will contain the name
-of the file it came from, and the line number in that file.
+Before parsing an Org file into a ~Document~, we will read its
+contents as lines, expanding all the =#+INCLUDE= directives while at
+it. The end result will be a list of lines where each line will
+contain not only the contents of that line, but also the name of the
+file it came from, and the line number in that file. This will be
+important when inserting line pragmas while tangling.
 
 #+NAME: Parser
 #+BEGIN_SRC haskell
@@ -169,6 +171,14 @@ tokens. We get around it by wrapping the list in a new type.
 newtype OrgLines = OrgLines [OrgLine]
 #+END_SRC
 
+Pretty-printing this is rather trivial.
+
+#+NAME: Pretty printing
+#+BEGIN_SRC haskell
+instance Pretty OrgLines where
+  pretty (OrgLines ls) = pretty ls
+#+END_SRC
+
 This is now turned into a ~Stream~. In order to be able to obtain
 valid positions for the end of file, I make sure to mark the end of
 the stream based on the ~OrgLines~ having a single empty string left.
@@ -236,11 +246,11 @@ satisfy f = P.tokenPrim
             (\c -> if f c then Just c else Nothing)
 #+END_SRC
 
-The only parser we /really/ need to re-define is ~endOfLine~, because
-it is only when changing lines that positions can switch from one
-source file to another in an ~OrgLine~. We will do it by replicating
-the relevant =Parsec= definitions, substituting our ~satisfy~ in the
-only place where it shows up.
+The only parser we /really/ need to re-define for positioning purposes
+is ~endOfLine~, because it is only when changing lines that positions
+can switch from one source file to another in an ~OrgLine~. We will do
+it by replicating the relevant =Parsec= definitions, substituting our
+~satisfy~ in the only place where it shows up.
 
 #+NAME: Parser
 #+BEGIN_SRC haskell
@@ -257,3 +267,79 @@ endOfLine :: Parser Char
 endOfLine = newline <|> crlf P.<?> "new-line"
 #+END_SRC
 
+** Parser Combinators
+
+The ~manyTill~ parser parses something until something else
+appears, then returns the list of things parsed. The only difference
+between ours and =Parsec='s is that ours does not consume the end
+parser's result.
+
+#+NAME: Parser
+#+BEGIN_SRC haskell
+manyTill :: Parser a -> Parser end -> Parser [a]
+manyTill p = P.manyTill p . P.lookAhead
+
+many1Till :: Parser a -> Parser end -> Parser [a]
+many1Till p = liftA2 (:) p . manyTill p
+#+END_SRC
+
+#+NAME: Parser
+#+BEGIN_SRC haskell
+eitherMany1 :: Parser end -> Parser a -> Parser (Either end [a])
+eitherMany1 end p =
+  (Left <$> P.try end) <|>
+  (Right <$> many1Till p (void endOfLine <|> void end))
+#+END_SRC
+
+** Parsing Documentation Text
+
+The [[https://orgmode.org/worg/dev/org-syntax.html#Emphasis_Markers][rules]] for
+parsing markup are rather complicated, so we will forfeit
+compatibility in exchange for simpler parsing. The main change is that
+we will not allow a markup to span multiple lines. The other change is
+that we don't care what characters precede or follow it. With those
+changes, the vast majority of the cases are still covered, and parsing
+is now rather simple.
+
+#+NAME: Parser
+#+BEGIN_SRC haskell
+instance Parse TextElement where
+  parse = do
+    parserTrace "TextElement"
+    either id Plain <$> eitherMany1
+      ((<<Parse a hyperlink>>) <|> markup)
+      anyChar
+    where
+      markup = P.choice $ map (\(t,c) -> t <$> enclosed c)
+               [ (Bold, '*')
+               , (InlineCode, '~')
+               , (Italics, '/')
+               , (StrikeThrough, '+')
+               , (TeXMath, '$')
+               , (Verbatim, '=')
+               ]
+#+END_SRC
+
+#+NAME: Parse a hyperlink
+#+BEGIN_SRC haskell
+do
+  address <- P.string "[[" *> many1Till anyChar (P.string "][" <|> P.string "]]")
+  sep <- P.string "][" <|> P.string "]]"
+  case sep of
+    "]]" -> return (HyperLink address (Text [Verbatim address]))
+    _    -> HyperLink address <$> textTill (P.string "]]")
+#+END_SRC
+
+#+NAME: Parser
+#+BEGIN_SRC haskell
+textTill :: Parser end -> Parser Text
+textTill end = do
+  p <- P.getPosition
+  t <- P.manyTill anyChar end
+  return . fromEither
+    $ P.runParser
+    (parse :: Parser Text)
+    initialParserState
+    (P.sourceName p)
+    (fromList [OrgLine p t] :: OrgLines)
+#+END_SRC

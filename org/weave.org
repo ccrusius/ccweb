@@ -125,6 +125,7 @@ instance Weave TextElement where
     (Verbatim s) -> between "\\hbox{\\tentex " "}" <$> concatMapM weave s
     (StrikeThrough _) -> error $ "not implemented: StrikeThrough"
     (TeXMath s) -> return $ between "$" "$" s
+    (HyperLink a d) -> (\t -> concat ["\\pdfURL{", t, "}{" , a, "}"]) <$> weave d
     where between before after s = before <> s <> after
 
 concatMapM :: Monad m => (a -> m [b]) -> [a] -> m [b]
@@ -207,7 +208,7 @@ instance Weave CodeElement where
 #+NAME: Weaver
 #+BEGIN_SRC haskell
 instance Weave CodeLine where
-  weave (CodeLine _ es) = concatMapM weave es
+  weave (CodeLine es) = concatMapM weave es
 #+END_SRC
 
 #+NAME: Weave section reference
@@ -241,7 +242,6 @@ instance Weave Document where
       , "\\con"
       ]
 #+END_SRC
-
 
 #+NAME: Write =scn= file
 #+BEGIN_SRC haskell

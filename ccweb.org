@@ -132,48 +132,12 @@ instance IsList OrgLines where
   toList (OrgLines xs) = xs
 #+END_SRC
 
-#+NAME: Pretty printing
-#+BEGIN_SRC haskell
-instance Pretty OrgLines where
-  pretty (OrgLines ls) = pretty ls
-#+END_SRC
-
 ** Basic Parsers
 
 #+NAME: Parser
 #+BEGIN_SRC haskell
 line :: Parser a -> Parser a
 line p = p <* endOfLine
-#+END_SRC
-
-** Emphasis and Monospace
-
-#+NAME: Pretty printing
-#+BEGIN_SRC haskell
-instance Pretty TextElement where
-  pretty (Bold a) = PP.text "Bold:" PP.<+> pretty a
-  pretty (InlineCode a) = PP.text "InlineCode:" PP.<+> pretty a
-  pretty (Italics a) = PP.text "Italics:" PP.<+> pretty a
-  pretty (Plain a) = pretty a
-  pretty (StrikeThrough a) = PP.text "StrikeThrough:" PP.<+> pretty a
-  pretty (TeXMath a) = PP.text "TeXMath:" PP.<+> pretty a
-  pretty (Verbatim a) = PP.text "Verbatim:" PP.<+> pretty a
-#+END_SRC
-
-#+NAME: Parser
-#+BEGIN_SRC haskell
-instance Parse TextElement where
-  parse = literalOr (return . Plain) (<<Parse a marked up text>>)
-#+END_SRC
-
-#+NAME: Parse a marked up text
-#+BEGIN_SRC haskell
-P.try (Bold <$> enclosed '*')
-<|> P.try (InlineCode <$> enclosed '~')
-<|> P.try (Italics <$> enclosed '/')
-<|> P.try (StrikeThrough <$> enclosed '+')
-<|> P.try (TeXMath <$> enclosed '$')
-<|> P.try (Verbatim <$> enclosed '=')
 #+END_SRC
 
 ** Lines of Text
@@ -190,7 +154,7 @@ I have little choice but to check for non-text things here.
 #+BEGIN_SRC haskell
 instance Parse Text where
   parse = do
-    --parserTrace "Text: parse"
+    parserTrace "Text"
     P.notFollowedBy (parse :: Parser Headline)
     P.notFollowedBy (spaces *> P.string "#+NAME")
     P.notFollowedBy (spaces *> P.string "#+BEGIN_SRC")
@@ -199,50 +163,27 @@ instance Parse Text where
 
 ** Lines of Code
 
-#+NAME: Pretty printing
-#+BEGIN_SRC haskell
-instance Pretty CodeElement where
-  pretty (Literal p s) = PP.parens $ pretty p PP.<> PP.colon PP.<> pretty s
-  pretty (SectionReference p t) = pretty p PP.<> PP.colon PP.<> PP.char '«' PP.<> pretty t PP.<> PP.char '»'
-#+END_SRC
-
 #+NAME: Parser
 #+BEGIN_SRC haskell
 instance Parse CodeElement where
-  parse = literalOr
-              (liftA2 Literal P.getPosition . return)
-              (P.try $ <<Parse a section reference>>)
+  parse = do
+    parserTrace "CodeElement"
+    pos <- P.getPosition
+    either id (Literal pos) <$> eitherMany1 (P.try $ <<Parse a section reference>>) anyChar
 #+END_SRC
 
 #+NAME: Parse a section reference
 #+BEGIN_SRC haskell
 do
-  p <- P.try (P.string "<<") *> P.getPosition
-  --parserTrace "Trying to parse a code reference after '<<'"
-  l <- OrgLine p <$> P.manyTill anyChar (P.try $ P.string ">>")
-  let t = fromEither
-        $ P.runParser
-        (parse :: Parser Text)
-        initialParserState
-        (P.sourceName p)
-        (fromList [l] :: OrgLines)
-      r = SectionReference p t
-  --parserTrace $ PP.text "Reference parsed" PP.<> PP.colon PP.<> pretty r
-  return r
-#+END_SRC
-
-#+NAME: Pretty printing
-#+BEGIN_SRC haskell
-instance Pretty CodeLine where
-  pretty (CodeLine p xs) = pretty p PP.<> PP.colon PP.<> pretty xs
+  _ <- P.try $ P.string "<<"
+  p <- P.getPosition
+  SectionReference p <$> textTill (P.string ">>")
 #+END_SRC
 
 #+NAME: Parser
 #+BEGIN_SRC haskell
 instance Parse CodeLine where
-  parse = line (liftA2 CodeLine
-                     P.getPosition
-                     (P.many parse :: Parser [CodeElement]))
+  parse = line (CodeLine <$> (P.many parse :: Parser [CodeElement]))
 #+END_SRC
 
 ** S-Expressions
@@ -388,9 +329,6 @@ P.try (spaces *> P.string "#+NAME:")
 
 ** Utility parsers
 
-The =Parsec= library provides a ~spaces~ function, but that also skips
-newlines. The parsers below implement the behaviors I need.
-
 #+NAME: Parser
 #+BEGIN_SRC haskell
 emptyLine :: Parser ()
@@ -398,17 +336,6 @@ emptyLine = void $ spaces *> endOfLine
 
 skipEmptyLines :: Parser ()
 skipEmptyLines = P.skipMany (P.try emptyLine)
-#+END_SRC
-
-#+NAME: Parser
-#+BEGIN_SRC haskell
-literalOr :: (String -> Parser a) -> Parser a -> Parser a
-literalOr f p = scan "" where
-  scan [] = p <|> (anyChar >>= scan . (:""))
-  scan acc =
-    ((P.lookAhead p) *> (f $ reverse acc))
-    <|> (anyChar >>= scan . (:acc))
-    <|> (f $ reverse acc)
 #+END_SRC
 
 I will need to parse strings enclosed by a single character delimiter
