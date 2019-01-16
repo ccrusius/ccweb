@@ -26,13 +26,11 @@ import Control.Monad.State (State, get, modify, runState)
 import Data.Foldable (foldlM, foldrM)
 import Data.Char (isPrint, isSpace, ord)
 import Data.List (intercalate, isPrefixOf, isSuffixOf, nub, sort)
-import Data.Maybe (fromJust, fromMaybe, isJust, mapMaybe)
+import Data.Maybe (catMaybes, fromJust, fromMaybe, isJust, mapMaybe)
 import Debug.Trace (trace)
 import qualified Data.Map as Map
 import GHC.Exts (IsList(..), groupWith, sortWith)
 import Network.HostName (getHostName)
-{-# LINE 214 "org/doc.org" #-}
-import qualified System.Info as Sys
 {-# LINE 74 "org/parser.org" #-}
 import qualified Text.Parsec as P
 import qualified Text.Parsec.Pos as P
@@ -45,6 +43,9 @@ import qualified System.Posix.Files as F
 import qualified Options.Applicative as O
 {-# LINE 180 "org/scaffold.org" #-}
 import qualified Text.PrettyPrint as PP
+{-# LINE 494 "ccweb.org" #-}
+import qualified System.Info as Sys
+import qualified Control.Exception as E
 {-# LINE 12 "org/doc.org" #-}
 data Document = Document
   { keywords :: [Keyword]
@@ -84,54 +85,54 @@ instance Eval Property where; eval s = Map.map (eval s)
 instance Eval Properties where; eval s = Map.map (eval s)
 {-# LINE 186 "org/doc.org" #-}
 instance Eval SExpr where
-{-# LINE 195 "org/doc.org" #-}
+{-# LINE 194 "org/doc.org" #-}
   eval s (SExpr [Atom "identity", expr]) = eval s expr
-{-# LINE 203 "org/doc.org" #-}
-  eval s (SExpr [Atom "system-name"]) = Atom $ hostName s
-  eval _ (Atom "system-type") = Atom $ case Sys.os of
-              "linux" -> "gnu/linux"
-              "mingw32" -> "windows-nt"
-              o -> o
-{-# LINE 222 "org/doc.org" #-}
+{-# LINE 202 "org/doc.org" #-}
   eval _ (Atom ('#':'o':x:y:z:[])) =
     IntAtom $ 8 * ((8 * oct x) + oct y) + oct z
     where oct c = ord c - ord '0'
-{-# LINE 231 "org/doc.org" #-}
+{-# LINE 211 "org/doc.org" #-}
   eval s (SExpr [Atom "eq", e1, e2]) = BoolAtom $ (eval s e1) == (eval s e2)
   
-{-# LINE 233 "org/doc.org" #-}
+{-# LINE 213 "org/doc.org" #-}
+  eval s (SExpr [Atom "string-prefix-p", prefix, expr]) =
+    case (eval s prefix, eval s expr) of
+      (Atom s', Atom str) -> BoolAtom $ isPrefixOf s' str
+      (e1, e2) -> SExpr [Atom "string-prefix-p", e1, e2]
+  
+{-# LINE 218 "org/doc.org" #-}
   eval s (SExpr [Atom "string-suffix-p", suffix, expr]) =
     case (eval s suffix, eval s expr) of
       (Atom s', Atom str) -> BoolAtom $ isSuffixOf s' str
       (e1, e2) -> SExpr [Atom "string-suffix-p", e1, e2]
-{-# LINE 243 "org/doc.org" #-}
+{-# LINE 228 "org/doc.org" #-}
   eval s (SExpr [Atom "when", expr, result]) =
     case eval s expr of
       BoolAtom True -> eval s result
       expr' -> expr'
   
-{-# LINE 248 "org/doc.org" #-}
+{-# LINE 233 "org/doc.org" #-}
   eval s (SExpr [Atom "unless", expr, result]) =
     case eval s expr of
       BoolAtom False -> eval s result
       BoolAtom True  -> BoolAtom False
       expr' -> expr'
-{-# LINE 188 "org/doc.org" #-}
-  eval _ x = x
-{-# LINE 265 "org/doc.org" #-}
+{-# LINE 245 "org/doc.org" #-}
+  eval s expr = Map.findWithDefault expr expr (evalContext s)
+{-# LINE 258 "org/doc.org" #-}
 class HeaderArgs a where
   headerArgs :: a -> Property
   headerArg :: String -> a -> Maybe SExpr
   headerArg k a = Map.lookup k $ headerArgs a
 
-{-# LINE 270 "org/doc.org" #-}
+{-# LINE 263 "org/doc.org" #-}
 instance HeaderArgs Properties where
   headerArgs = Map.findWithDefault Map.empty "header-args"
 
-{-# LINE 273 "org/doc.org" #-}
+{-# LINE 266 "org/doc.org" #-}
 instance HeaderArgs Section where
   headerArgs = headerArgs . sectionDerivedProperties
-{-# LINE 289 "org/doc.org" #-}
+{-# LINE 282 "org/doc.org" #-}
 data SourceBlock = SourceBlock
   { blockName :: Maybe Text
   , blockLanguage :: String
@@ -140,19 +141,19 @@ data SourceBlock = SourceBlock
   , blockProperties :: Property
   , blockDerivedProperties :: Property
   }
-{-# LINE 318 "org/doc.org" #-}
+{-# LINE 311 "org/doc.org" #-}
 instance HeaderArgs SourceBlock where
   headerArgs = blockDerivedProperties
-{-# LINE 329 "org/doc.org" #-}
+{-# LINE 322 "org/doc.org" #-}
 data SourceBlockId = FileBlock FilePath | NamedBlock Text deriving Eq
 
-{-# LINE 331 "org/doc.org" #-}
+{-# LINE 324 "org/doc.org" #-}
 instance Ord SourceBlockId where
   (<=) (FileBlock p1) (FileBlock p2) = p1 <= p2
   (<=) (NamedBlock p1) (NamedBlock p2) = p1 <= p2
   (<=) (FileBlock _) (NamedBlock _) = False
   (<=) _ _ = True
-{-# LINE 344 "org/doc.org" #-}
+{-# LINE 337 "org/doc.org" #-}
 sourceBlockId :: SourceBlock -> Maybe SourceBlockId
 sourceBlockId SourceBlock{ blockName = (Just name) } = Just $ NamedBlock name
 sourceBlockId block = case headerArg ":tangle" block of
@@ -160,14 +161,14 @@ sourceBlockId block = case headerArg ":tangle" block of
     Just (Atom f) -> Just $ FileBlock f
     Just (BoolAtom _) -> Nothing
     Just e -> error $ "unsupported tangle destination: " ++ show e
-{-# LINE 358 "org/doc.org" #-}
+{-# LINE 351 "org/doc.org" #-}
 newtype CodeLine = CodeLine [CodeElement]
 data CodeElement = Literal P.SourcePos String
                  | SectionReference P.SourcePos Text
-{-# LINE 387 "org/doc.org" #-}
+{-# LINE 380 "org/doc.org" #-}
 data Text = Text [TextElement] deriving (Eq, Ord, Show)
 
-{-# LINE 389 "org/doc.org" #-}
+{-# LINE 382 "org/doc.org" #-}
 data TextElement =
   Bold String
   | HyperLink String Text
@@ -178,7 +179,7 @@ data TextElement =
   | TeXMath String
   | Verbatim String
   deriving (Eq, Ord, Show)
-{-# LINE 428 "org/doc.org" #-}
+{-# LINE 421 "org/doc.org" #-}
 type DocumentPartition = Map.Map SourceBlockId [Section]
 {-# LINE 27 "org/doc.org" #-}
 instance Pretty Document where
@@ -215,7 +216,7 @@ instance Show SExpr where
 {-# LINE 151 "org/doc.org" #-}
 instance Pretty SExpr where
   pretty = PP.text . show
-{-# LINE 303 "org/doc.org" #-}
+{-# LINE 296 "org/doc.org" #-}
 instance Pretty SourceBlock where
   pretty = prettyStruct "SourceBlock"
              [ ("name", pretty . blockName)
@@ -225,17 +226,17 @@ instance Pretty SourceBlock where
              , ("location", pretty . blockLocation)
              , ("lines", pretty . blockLines)
              ]
-{-# LINE 369 "org/doc.org" #-}
+{-# LINE 362 "org/doc.org" #-}
 instance Pretty CodeLine where
   pretty (CodeLine xs) = pretty xs
 
-{-# LINE 372 "org/doc.org" #-}
+{-# LINE 365 "org/doc.org" #-}
 instance Pretty CodeElement where
   pretty (Literal p s) =
     PP.parens $ PP.hcat [pretty p, PP.colon, pretty s]
   pretty (SectionReference p t) =
     PP.hcat [pretty p, PP.colon, PP.char '〈', pretty t, PP.char '〉']
-{-# LINE 407 "org/doc.org" #-}
+{-# LINE 400 "org/doc.org" #-}
 instance Pretty TextElement where
   pretty = \case
     (Bold a)          -> pretty' "bold" a
@@ -255,7 +256,7 @@ instance Pretty TextElement where
 instance Pretty ParserState where
   pretty = prettyStruct "ParserState"
     [ ("counter", pretty . sectionCounter)
-    , ("host", pretty . hostName)
+    , ("eval context", pretty . evalContext)
     , ("log level", pretty . parserLogLevel)
     , ("property stack", pretty . propertyStack)
     ]
@@ -361,7 +362,7 @@ logM lvl minLvl = when (lvl >= minLvl) . putStrLn . PP.render . pretty
 data ParserState = ParserState
   { sectionCounter :: Int
   , propertyStack  :: Stack Properties
-  , hostName       :: String
+  , evalContext    :: Map.Map SExpr SExpr
   , parserLogLevel :: LogLevel
   }
 {-# LINE 39 "org/parser.org" #-}
@@ -547,7 +548,7 @@ initialParserState = ParserState
   { sectionCounter = 0
   , propertyStack  = Stack []
   , parserLogLevel = Debug
-  , hostName       = []
+  , evalContext    = Map.empty
   }
 {-# LINE 107 "ccweb.org" #-}
 parserDebug :: (Pretty a, Pretty b) => a -> b -> Parser ()
@@ -857,10 +858,44 @@ instance Parse Document where
 readOrgFile :: LogLevel -> FilePath -> IO (OrgLines, Document)
 readOrgFile lvl fp = do
   ingested <- fromList <$> ingest fp :: IO OrgLines
-  h <- getHostName
+{-# LINE 467 "ccweb.org" #-}
+  let styp = ( Atom "system-type"
+             , Atom $ case Sys.os of
+                        "linux" -> "gnu/linux"
+                        "mingw32" -> "windows-nt"
+                        o -> o
+             )
+      atomize k = fmap ((Atom k,) . Atom)
+  hnam <- (SExpr [Atom "system-name"],) . Atom <$> getHostName
+  pfam <- atomize "dmi/product-family"  <$> (
+{-# LINE 484 "ccweb.org" #-}
+                                             \p -> either (\_ -> Nothing) (Just . reverse . dropWhile isSpace . reverse)
+                                                  <$> (E.try (readFile $ "/sys/devices/virtual/dmi/id" F.</> p)
+                                                       :: IO (Either E.IOException String))
+{-# LINE 475 "ccweb.org" #-}
+                                                                                           ) "product_family"
+  pnam <- atomize "dmi/product-name"    <$> (
+{-# LINE 484 "ccweb.org" #-}
+                                             \p -> either (\_ -> Nothing) (Just . reverse . dropWhile isSpace . reverse)
+                                                  <$> (E.try (readFile $ "/sys/devices/virtual/dmi/id" F.</> p)
+                                                       :: IO (Either E.IOException String))
+{-# LINE 476 "ccweb.org" #-}
+                                                                                           ) "product_name"
+  pver <- atomize "dmi/product-version" <$> (
+{-# LINE 484 "ccweb.org" #-}
+                                             \p -> either (\_ -> Nothing) (Just . reverse . dropWhile isSpace . reverse)
+                                                  <$> (E.try (readFile $ "/sys/devices/virtual/dmi/id" F.</> p)
+                                                       :: IO (Either E.IOException String))
+{-# LINE 477 "ccweb.org" #-}
+                                                                                           ) "product_version"
+{-# LINE 477 "ccweb.org" #-}
+  
+{-# LINE 479 "ccweb.org" #-}
+  let ctx = Map.fromList $ styp : hnam : catMaybes [pfam, pnam, pver]
+{-# LINE 457 "ccweb.org" #-}
   let doc = fromEither $ P.runParser
         (parse :: Parser Document)
-        initialParserState{ hostName = h, parserLogLevel = lvl }
+        initialParserState{ evalContext = ctx, parserLogLevel = lvl }
         fp
         ingested
   return (ingested, doc)
@@ -976,7 +1011,7 @@ main = do
                . (mapMaybe (\(i,ss) -> case i of; (FileBlock f) -> Just (f,ss); _ -> Nothing) . toList
                   :: DocumentPartition -> [(FilePath, [Section])])
                . (
-{-# LINE 433 "org/doc.org" #-}
+{-# LINE 426 "org/doc.org" #-}
                   ((Map.fromList . map (\bs -> (fst (head bs), map snd bs)))
                        :: [[(SourceBlockId, Section)]] -> DocumentPartition)
                     . (groupWith fst
@@ -1183,7 +1218,7 @@ tangleFile opts doc (fp, bs) = do
                                         []
 {-# LINE 372 "org/tangle.org" #-}
                                            ls
-  logM (logLevel opts) Info $ "Writing the output file (" ++ fp ++ ")..."
+  logM (logLevel opts) Info $ "Writing one output file (" ++ fp ++ ")..."
   if dryRun opts
     then logM (logLevel opts) Info contents
     else do

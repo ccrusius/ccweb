@@ -52,7 +52,7 @@ import Control.Monad.State (State, get, modify, runState)
 import Data.Foldable (foldlM, foldrM)
 import Data.Char (isPrint, isSpace, ord)
 import Data.List (intercalate, isPrefixOf, isSuffixOf, nub, sort)
-import Data.Maybe (fromJust, fromMaybe, isJust, mapMaybe)
+import Data.Maybe (catMaybes, fromJust, fromMaybe, isJust, mapMaybe)
 import Debug.Trace (trace)
 import qualified Data.Map as Map
 import GHC.Exts (IsList(..), groupWith, sortWith)
@@ -98,7 +98,7 @@ initialParserState = ParserState
   { sectionCounter = 0
   , propertyStack  = Stack []
   , parserLogLevel = Debug
-  , hostName       = []
+  , evalContext    = Map.empty
   }
 #+END_SRC
 
@@ -453,12 +453,45 @@ instance Parse Document where
 readOrgFile :: LogLevel -> FilePath -> IO (OrgLines, Document)
 readOrgFile lvl fp = do
   ingested <- fromList <$> ingest fp :: IO OrgLines
-  h <- getHostName
+  <<Build the evaluation context ~ctx~>>
   let doc = fromEither $ P.runParser
         (parse :: Parser Document)
-        initialParserState{ hostName = h, parserLogLevel = lvl }
+        initialParserState{ evalContext = ctx, parserLogLevel = lvl }
         fp
         ingested
   return (ingested, doc)
+#+END_SRC
+
+#+NAME: Build the evaluation context ~ctx~
+#+BEGIN_SRC haskell
+let styp = ( Atom "system-type"
+           , Atom $ case Sys.os of
+                      "linux" -> "gnu/linux"
+                      "mingw32" -> "windows-nt"
+                      o -> o
+           )
+    atomize k = fmap ((Atom k,) . Atom)
+hnam <- (SExpr [Atom "system-name"],) . Atom <$> getHostName
+pfam <- atomize "dmi/product-family"  <$> (<<Read DMI property>>) "product_family"
+pnam <- atomize "dmi/product-name"    <$> (<<Read DMI property>>) "product_name"
+pver <- atomize "dmi/product-version" <$> (<<Read DMI property>>) "product_version"
+
+let ctx = Map.fromList $ styp : hnam : catMaybes [pfam, pnam, pver]
+#+END_SRC
+
+#+NAME: Read DMI property
+#+BEGIN_SRC haskell
+\p -> either (\_ -> Nothing) (Just . reverse . dropWhile isSpace . reverse)
+     <$> (E.try (readFile $ "/sys/devices/virtual/dmi/id" F.</> p)
+          :: IO (Either E.IOException String))
+#+END_SRC
+
+The =Sys.os= variable requires the import of =System.Info=, and =try=
+is from =System.IO.Error=
+
+#+NAME: Imports
+#+BEGIN_SRC haskell
+import qualified System.Info as Sys
+import qualified Control.Exception as E
 #+END_SRC
 

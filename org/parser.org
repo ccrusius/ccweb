@@ -2,16 +2,16 @@
 
 We will do some extra work during parsing to avoid multiple passes
 over the structure, and in order to do that we will keep some
-state. This state will contain the host name (used when evaluating
-s-expressions), the log level specified by the user, a property stack,
-and the current section number.
+state. This state will contain the evaluation context (used when
+evaluating s-expressions), the log level specified by the user, a
+property stack, and the current section number.
 
 #+NAME: Parser
 #+BEGIN_SRC haskell
 data ParserState = ParserState
   { sectionCounter :: Int
   , propertyStack  :: Stack Properties
-  , hostName       :: String
+  , evalContext    :: Map.Map SExpr SExpr
   , parserLogLevel :: LogLevel
   }
 #+END_SRC
@@ -23,7 +23,7 @@ As with other things, we pretty-print it as a map.
 instance Pretty ParserState where
   pretty = prettyStruct "ParserState"
     [ ("counter", pretty . sectionCounter)
-    , ("host", pretty . hostName)
+    , ("eval context", pretty . evalContext)
     , ("log level", pretty . parserLogLevel)
     , ("property stack", pretty . propertyStack)
     ]

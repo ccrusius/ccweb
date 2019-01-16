@@ -185,7 +185,6 @@ support, and return them unmodified if matching fails.
 #+BEGIN_SRC haskell
 instance Eval SExpr where
   <<Evaluate an s-expression>>
-  eval _ x = x
 #+END_SRC
 
 The easiest evaluatin case is the function =identity=.
@@ -193,25 +192,6 @@ The easiest evaluatin case is the function =identity=.
 #+NAME: Evaluate an s-expression
 #+BEGIN_SRC haskell
 eval s (SExpr [Atom "identity", expr]) = eval s expr
-#+END_SRC
-
-Also simple are the pre-defined constants. We have to translate between Haskell
-and Emacs system names to maintain compatibility.
-
-#+NAME: Evaluate an s-expression
-#+BEGIN_SRC haskell
-eval s (SExpr [Atom "system-name"]) = Atom $ hostName s
-eval _ (Atom "system-type") = Atom $ case Sys.os of
-            "linux" -> "gnu/linux"
-            "mingw32" -> "windows-nt"
-            o -> o
-#+END_SRC
-
-The system type requires the import of =System.Info=.
-
-#+NAME: Imports
-#+BEGIN_SRC haskell
-import qualified System.Info as Sys
 #+END_SRC
 
 Number evaluation is as robust as it needs to be, which is not much,
@@ -230,13 +210,18 @@ Next are the comparisons, including =string-suffix-p=
 #+BEGIN_SRC haskell
 eval s (SExpr [Atom "eq", e1, e2]) = BoolAtom $ (eval s e1) == (eval s e2)
 
+eval s (SExpr [Atom "string-prefix-p", prefix, expr]) =
+  case (eval s prefix, eval s expr) of
+    (Atom s', Atom str) -> BoolAtom $ isPrefixOf s' str
+    (e1, e2) -> SExpr [Atom "string-prefix-p", e1, e2]
+
 eval s (SExpr [Atom "string-suffix-p", suffix, expr]) =
   case (eval s suffix, eval s expr) of
     (Atom s', Atom str) -> BoolAtom $ isSuffixOf s' str
     (e1, e2) -> SExpr [Atom "string-suffix-p", e1, e2]
 #+END_SRC
 
-Finally, the conditionals.
+Now the conditionals.
 
 #+NAME: Evaluate an s-expression
 #+BEGIN_SRC haskell
@@ -250,6 +235,14 @@ eval s (SExpr [Atom "unless", expr, result]) =
     BoolAtom False -> eval s result
     BoolAtom True  -> BoolAtom False
     expr' -> expr'
+#+END_SRC
+
+If everytheng else failed, we look into the evaluation context for a
+match, and if it is not there return the expression unmodified
+
+#+NAME: Evaluate an s-expression
+#+BEGIN_SRC haskell
+eval s expr = Map.findWithDefault expr expr (evalContext s)
 #+END_SRC
 
 Sections, as we have seen above, have properties, and so will code
@@ -440,4 +433,3 @@ type DocumentPartition = Map.Map SourceBlockId [Section]
      :: [Section] -> [(SourceBlockId, Section)])
   . sections
 #+END_SRC
-

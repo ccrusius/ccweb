@@ -370,7 +370,7 @@ tangleFile opts doc (fp, bs) = do
            )
            bs
       contents = concatMap show $ <<Remove redundant line pragmas>> ls
-  logM (logLevel opts) Info $ "Writing the output file (" ++ fp ++ ")..."
+  logM (logLevel opts) Info $ "Writing one output file (" ++ fp ++ ")..."
   if dryRun opts
     then logM (logLevel opts) Info contents
     else do
