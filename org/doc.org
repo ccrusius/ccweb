@@ -414,6 +414,18 @@ instance Pretty TextElement where
       pretty' lbl str = PP.hcat [pretty lbl, PP.braces (pretty str)]
 #+END_SRC
 
+There will be some need for manipulating ~Text~ after it gets
+parsed. This is due to us having to parse leading spaces in some cases
+in order to properly parse markup text.
+
+#+NAME: Document data model
+#+BEGIN_SRC haskell
+trim :: Text -> Text
+trim (Text (Plain []:ys))       = trim $ Text ys
+trim (Text (Plain (' ':xs):ys)) = trim $ Text (Plain xs:ys)
+trim  t                         = t
+#+END_SRC
+
 ** Operations on Documents
 
 #+NAME: Document data model

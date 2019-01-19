@@ -6,8 +6,8 @@ cabal-version: >=1.10
 executable cctangle
   main-is: bin/cctangle.hs
   build-depends:
-                base, containers, directory, filepath, hostname, mtl,
-                optparse-applicative, parsec, pretty, unix
+                ansi-terminal, base, containers, directory, filepath, hostname,
+                mtl, optparse-applicative, parsec, pretty, unix
   default-language: Haskell2010
   ghc-options: -Wall -Werror -O2 -rtsopts
   hs-source-dirs: .
@@ -16,8 +16,8 @@ executable cctangle
 executable ccweave
   main-is: bin/ccweave.hs
   build-depends:
-                base, containers, directory, filepath, hostname, mtl,
-                optparse-applicative, parsec, pretty, unix
+                ansi-terminal, base, containers, directory, filepath, hostname,
+                mtl, optparse-applicative, parsec, pretty, unix
   default-language: Haskell2010
   ghc-options: -Wall -O2 -rtsopts
   hs-source-dirs: .

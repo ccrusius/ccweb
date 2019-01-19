@@ -23,6 +23,7 @@ define STACK_PREAMBLE
   --package unix
   --package optparse-applicative
   --package pretty
+  --package ansi-terminal
 -}
 endef
 

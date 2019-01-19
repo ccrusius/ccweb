@@ -310,18 +310,20 @@ part. The basic logic is as follows:
 #+BEGIN_SRC haskell
 (_, (CodeText l:ls), SectionReference pos name) -> do
   refLines <- <<Get the tangled lines for a section reference named ~name~>>
-  let (refPragmas, (CodeText first : rest)) = breakCodeText refLines
-  acc' <- case (refPragmas, accPragmas) of
-    ([], []) -> do
-      unindented <- <<Remove current indent from string>> first
-      addIndentFrom unindented
-      return $ reverse rest ++ (CodeText(l ++ unindented) : ls)
-    _ -> do
-      let reverseRefLines = reverse refLines
-          CodeText lst = head . snd $ breakCodeText reverseRefLines
-      setIndentFrom lst
-      return $ reverseRefLines ++ acc
-  getTopBlock >>= maybeAddLinePragma acc' pos
+  case breakCodeText refLines of
+    (refPragmas, (CodeText first : rest)) -> do
+      acc' <- case (refPragmas, accPragmas) of
+        ([], []) -> do
+          unindented <- <<Remove current indent from string>> first
+          addIndentFrom unindented
+          return $ reverse rest ++ (CodeText(l ++ unindented) : ls)
+        _ -> do
+          let reverseRefLines = reverse refLines
+              CodeText lst = head . snd $ breakCodeText reverseRefLines
+          setIndentFrom lst
+          return $ reverseRefLines ++ acc
+      getTopBlock >>= maybeAddLinePragma acc' pos
+    _ -> error $ "empty section reference: " ++ show name
 #+END_SRC
 
 #+NAME: Get the tangled lines for a section reference named ~name~

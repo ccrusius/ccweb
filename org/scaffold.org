@@ -210,6 +210,9 @@ instance Pretty a => Pretty (Maybe a) where
   pretty Nothing = PP.text "Nothing"
   pretty (Just a) = pretty a
 
+instance Pretty () where
+  pretty _ = PP.text ""
+
 instance (Pretty a, Pretty b) => Pretty (a,b) where
   pretty (a,b) = PP.parens . PP.fcat . PP.punctuate PP.comma $ [pretty a, pretty b]
 

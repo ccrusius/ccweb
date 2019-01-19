@@ -104,22 +104,39 @@ initialParserState = ParserState
 
 #+NAME: Parser
 #+BEGIN_SRC haskell
-parserDebug :: (Pretty a, Pretty b) => a -> b -> Parser ()
+parserDebug :: (Pretty a, Pretty b) => a -> b -> Parser b
 parserDebug l s = do
   lvl <- parserLogLevel <$> P.getState
   pos <- P.getPosition
-  let label = pretty pos PP.<> PP.colon PP.<> pretty l PP.<> PP.colon
+  let label = PP.hcat [pretty pos, PP.colon, pretty red, pretty l, pretty reset, PP.colon]
   if lvl >= Trace
-  then trace (PP.render (PP.hang label 4 (pretty s))) $ return ()
-  else return ()
+  then trace (PP.render (PP.hang label 4 (pretty s))) $ return s
+  else return s
 
-parserTrace :: Pretty a => a -> Parser ()
-parserTrace l = do
+parserTrace :: (Pretty a, Pretty b) => a -> b -> Parser b
+parserTrace l s = do
   (OrgLines ls) <- P.stateInput <$> P.getParserState
   u <- P.getState
   let user = pretty "user state" PP.<> PP.colon PP.<> pretty u
       input = pretty "looking at" PP.<> PP.colon PP.<> pretty (take 3 ls)
-  parserDebug l (PP.fcat [user, input])
+  _ <- parserDebug l (PP.fcat [pretty s, user, input])
+  return s
+
+red :: String
+red = ANSI.setSGRCode [ANSI.SetColor ANSI.Foreground ANSI.Dull ANSI.Red]
+
+reset :: String
+reset = ANSI.setSGRCode [ANSI.Reset]
+#+END_SRC
+
+#+NAME: Imports
+#+BEGIN_SRC haskell
+import qualified System.Console.ANSI as ANSI
+#+END_SRC
+
+#+NAME: stack-packages
+#+BEGIN_SRC shell
+--package ansi-terminal
 #+END_SRC
 
 ** Lines of Input
@@ -148,26 +165,12 @@ instance Pretty Text where
   pretty (Text xs) = PP.text "Text:" PP.<+> PP.hcat (map pretty xs)
 #+END_SRC
 
-I have little choice but to check for non-text things here.
-
-#+NAME: Parser
-#+BEGIN_SRC haskell
-instance Parse Text where
-  parse = do
-    parserTrace "Text"
-    P.notFollowedBy (parse :: Parser Headline)
-    P.notFollowedBy (spaces *> P.string "#+NAME")
-    P.notFollowedBy (spaces *> P.string "#+BEGIN_SRC")
-    Text <$> line (P.many1 parse :: Parser [TextElement])
-#+END_SRC
-
 ** Lines of Code
 
 #+NAME: Parser
 #+BEGIN_SRC haskell
 instance Parse CodeElement where
   parse = do
-    parserTrace "CodeElement"
     pos <- P.getPosition
     either id (Literal pos) <$> eitherMany1 (P.try $ <<Parse a section reference>>) anyChar
 #+END_SRC
@@ -226,8 +229,11 @@ Atom <$> (enclosed '"' <|> symbol)
 #+NAME: Parser
 #+BEGIN_SRC haskell
 instance Parse Properties where
-  parse = (<<Parse a =#+PROPERTY= line>>)
-              <|> (<<Parse a =:PROPERTIES:= drawer>>)
+  parse = do
+    _ <- parserTrace "Properties" ()
+    ps <- (<<Parse a =#+PROPERTY= line>>) <|> (<<Parse a =:PROPERTIES:= drawer>>)
+    _ <- parserTrace "/Properties" ()
+    return ps
 #+END_SRC
 
 #+NAME: Parse a =#+PROPERTY= line
@@ -278,9 +284,11 @@ do
 #+BEGIN_SRC haskell
 instance Parse Headline where
   parse = do
+    _ <- parserTrace "Headline" ()
     s <- P.try (char '*') *> P.many (char '*')
     _ <- spaces1
     t <- parse :: Parser Text
+    _ <- parserTrace "/Headline" ()
     return $ Headline (length s) t
 #+END_SRC
 
@@ -296,19 +304,19 @@ headlineLevel (Headline x _) = x
 #+BEGIN_SRC haskell
 instance Parse SourceBlock where
   parse = do
-    --parserTrace "SourceBlock: trying to find a code block here"
+    _ <- parserTrace "SourceBlock" ()
     n  <- P.optionMaybe (<<Parse a =#+NAME= line>>)
     i  <- P.try (spaces <* (P.string "#+BEGIN_SRC" *> spaces1))
-    --parserTrace "SourceBlock: found a code block, parsing language"
+    _ <- parserTrace "SourceBlock:Language" ()
     l  <- symbol <* spaces
-    --parserTrace "SourceBlock: found a code block, parsing properties"
+    _ <- parserTrace "SourceBlock:Properties" ()
     ps <- <<Parse a line of property key-value pairs>>
     ps' <- Map.union ps . headerArgs . top . propertyStack <$> P.getState
     p  <- P.getPosition
-    --parserTrace "SourceBlock: found a code block, parsing lines"
+    _ <- parserTrace "SourceBlock:Lines" ()
     ls <- P.manyTill (P.string i *> parse :: Parser CodeLine)
          (P.try (line (P.string i *> P.string "#+END_SRC" *> spaces)))
-    --parserTrace "SourceBlock: code block parsed"
+    _ <- parserTrace "/SourceBlock" ()
     state <- P.getState
     return $ SourceBlock
       { blockName = n
@@ -320,22 +328,25 @@ instance Parse SourceBlock where
       }
 #+END_SRC
 
+The first element of a =#+NAME= line can be a markup, so we have to
+parse the name with leading spaces (so the markup gets identified),
+and remove them afterwards.
+
 #+NAME: Parse a =#+NAME= line
 #+BEGIN_SRC haskell
-P.try (spaces *> P.string "#+NAME:")
-*> spaces
-*> parse :: Parser Text
+P.try (spaces *> P.string "#+NAME:") *> (trim <$> parse)
+>>= parserTrace "SourceBlock:/Name"
+:: Parser Text
 #+END_SRC
 
 ** Utility parsers
 
 #+NAME: Parser
 #+BEGIN_SRC haskell
-emptyLine :: Parser ()
-emptyLine = void $ spaces *> endOfLine
-
 skipEmptyLines :: Parser ()
-skipEmptyLines = P.skipMany (P.try emptyLine)
+skipEmptyLines = do
+  _ <- parserTrace "SkipEmptyLines" ()
+  P.skipMany $ P.try (spaces *> endOfLine)
 #+END_SRC
 
 I will need to parse strings enclosed by a single character delimiter
@@ -354,35 +365,42 @@ enclosed d = P.try (P.char d) *> P.manyTill anyChar (P.char d)
 #+BEGIN_SRC haskell
 instance Parse Section where
   parse = do
-    parserTrace "start of section parsing"
+    _ <- parserTrace "Section" ()
 
     skipEmptyLines
+    _ <- parserTrace "Section:Maybe Headline" ()
     h <- P.optionMaybe parse :: Parser (Maybe Headline)
 
     skipEmptyLines
+    _ <- parserTrace "Section:Properties" ()
     ps <- case h of
       Nothing -> return Map.empty
       _ -> parse <|> return Map.empty :: Parser Properties
-    parserDebug "section properties" ps
+    _ <- parserDebug "Section:/Properties" ps
 
     when (isJust h) $ do
       stk' <- resize (1 + (headlineLevel $ fromJust h)) . propertyStack <$> P.getState
       P.updateState (\s -> s{ propertyStack = stk' })
       ps' <- Map.unionWith Map.union ps . top . propertyStack <$> P.getState
       P.updateState (\s -> s{ propertyStack = push ps' stk' })
-    P.getState >>= parserDebug "updated parser properties" . propertyStack
+      P.getState >>= void . parserDebug "Section:Parser properties" . propertyStack
 
     skipEmptyLines
-    ts  <- P.optionMaybe $ P.many1 $ parse :: Parser (Maybe [Text])
+    _ <- parserTrace "Section:Maybe [Text]" ()
+    ts  <- P.optionMaybe . P.many1 . P.try $ parse :: Parser (Maybe [Text])
+    _ <- parserTrace "Section:/Maybe [Text]" ()
 
     skipEmptyLines
+    _ <- parserTrace "Section:Maybe SourceBlock" ()
     c <- case (ts, h) of
           (Nothing, Nothing) -> Just <$> (parse :: Parser SourceBlock)
           (_, _) -> P.optionMaybe $ parse :: Parser (Maybe SourceBlock)
 
     skipEmptyLines
 
-    parserTrace "end of section parsing"
+    _ <- parserTrace "/Section" ()
+
+    succeedWhen (isJust h || isJust ts || isJust c)
 
     state <- P.getState
     let n = 1 + sectionCounter state
@@ -435,17 +453,20 @@ headerProperties = foldl acc mempty where
 #+BEGIN_SRC haskell
 instance Parse Document where
   parse = do
-    --parserTrace "Document: Parsing keywords"
+    _ <- parserTrace "Document" ()
     hs <- P.many parse :: Parser [Keyword]
     P.updateState $ \s -> s{ propertyStack = Stack [headerProperties hs] }
     skipEmptyLines
-    --parserTrace "Document: Parsing sections"
-    ss <- P.many parse :: Parser [Section]
+    _ <- parserTrace "Document:Sections" ()
+    ss <- P.many . P.try $ parse :: Parser [Section]
+    _ <- parserTrace "Document:/Sections" ()
     skipEmptyLines *> P.eof
-    return Document
-      { keywords = hs
-      , sections = ss
-      }
+    parserTrace "/Document" $ Document { keywords = hs , sections = ss }
+    -- _ <- parserTrace "/Document" ()
+    -- return Document
+    --   { keywords = hs
+    --   , sections = ss
+    --   }
 #+END_SRC
 
 #+NAME: Parser
