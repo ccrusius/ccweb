@@ -56,8 +56,8 @@ important when inserting line pragmas while tangling.
 data OrgLine = OrgLine P.SourcePos String
 #+END_SRC
 
-As we will see later, these lines may end up having a terminating
-=NUL= character, so pretty-printing them requires filtering it out.
+We have to remove the trailing newline when pretty-printer, as the
+decision to break a line or not is up to the pretty-printing algorithm.
 
 #+NAME: Pretty printing
 #+BEGIN_SRC haskell
@@ -362,26 +362,33 @@ P.try $
 
 #+NAME: Parse a markup text element
 #+BEGIN_SRC haskell
-\ctr marker ->
+\marker ->
   do
     pre <- <<Parse the start of markup ~marker~>>
+    p <- P.getPosition
     body <- manyTill anyChar (<<Parse the end of markup ~marker~>>)
     border <- anyChar
     _ <- P.char marker
-    return (pre, ctr (body ++ [border]))
+    let body' = body ++ [border]
+        body'' = fromEither $ P.runParser
+                   (parse :: Parser Text)
+                   initialParserState
+                   (P.sourceName p)
+                   (fromList [OrgLine p body'] :: OrgLines)
+    return . (pre,) $ case marker of
+      '*' -> Bold body''
+      '~' -> InlineCode body'
+      '/' -> Italics body''
+      '+' -> StrikeThrough body'
+      '$' -> TeXMath body'
+      '=' -> Verbatim body'
+      e   -> error $ "unknown markup marker '" ++ show e ++ "'"
   :: Parser (Maybe Char, TextElement)
 #+END_SRC
 
 #+NAME: Parse all supported markups
 #+BEGIN_SRC haskell
-P.choice $ map (\(typ,mark) -> P.try ((<<Parse a markup text element>>) typ mark))
-[ (Bold, '*')
-, (InlineCode, '~')
-, (Italics, '/')
-, (StrikeThrough, '+')
-, (TeXMath, '$')
-, (Verbatim, '=')
-]
+P.choice $ map (P.try . (<<Parse a markup text element>>)) "*~/+$="
 :: Parser (Maybe Char, TextElement)
 #+END_SRC
 

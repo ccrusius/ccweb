@@ -462,11 +462,6 @@ instance Parse Document where
     _ <- parserTrace "Document:/Sections" ()
     skipEmptyLines *> P.eof
     parserTrace "/Document" $ Document { keywords = hs , sections = ss }
-    -- _ <- parserTrace "/Document" ()
-    -- return Document
-    --   { keywords = hs
-    --   , sections = ss
-    --   }
 #+END_SRC
 
 #+NAME: Parser

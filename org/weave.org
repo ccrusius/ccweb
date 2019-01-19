@@ -112,17 +112,33 @@ instance Weave Char where
   weave '$' = return "{\\$}"
   weave '%' = return "{\\%}"
   weave c = return [c]
+
+instance Weave String where
+  weave = concatMapM (
+    \case
+      '&' -> return "{\\AM}"
+      '\\' -> return "{\\BS}"
+      '{' -> return "{\\LB}"
+      '}' -> return "{\\RB}"
+      '~' -> return "{\\TL}"
+      '_' -> return "{\\UL}"
+      '^' -> return "{\\CF}"
+      '#' -> return "{\\#}"
+      '$' -> return "{\\$}"
+      '%' -> return "{\\%}"
+      c -> return [c]
+    )
 #+END_SRC
 
 #+NAME: Weaver
 #+BEGIN_SRC haskell
 instance Weave TextElement where
   weave = \case
-    (Plain s) -> concatMapM weave s
-    (Bold s) -> between "{\\bf " "}" <$> concatMapM weave s
-    (Italics s) -> between "{\\it " "\\/}" <$> concatMapM weave s
-    (InlineCode s) -> between "\\hbox{\\tentex " "}" <$> concatMapM weave s
-    (Verbatim s) -> between "\\hbox{\\tentex " "}" <$> concatMapM weave s
+    (Plain s) -> weave s
+    (Bold s) -> between "{\\bf " "}" <$> weave s
+    (Italics s) -> between "{\\it " "\\/}" <$> weave s
+    (InlineCode s) -> between "\\hbox{\\tentex " "}" <$> weave s
+    (Verbatim s) -> between "\\hbox{\\tentex " "}" <$> weave s
     (StrikeThrough _) -> error $ "not implemented: StrikeThrough"
     (TeXMath s) -> return $ between "$" "$" s
     (HyperLink a d) -> (\t -> concat ["\\pdfURL{", t, "}{" , a, "}"]) <$> weave d
@@ -198,7 +214,7 @@ case sectionSourceBlock s of
 #+BEGIN_SRC haskell
 instance Weave CodeElement where
   weave (Literal _ s) = do
-    s' <- concatMapM weave s
+    s' <- weave s
     return $ "\\hbox{\\tentex "
       ++ map (\c -> if c == ' ' then '~' else c) s'
       ++ "}"

@@ -380,10 +380,10 @@ that there are many more text elements.
 data Text = Text [TextElement] deriving (Eq, Ord, Show)
 
 data TextElement =
-  Bold String
+  Bold Text
   | HyperLink String Text
   | InlineCode String
-  | Italics String
+  | Italics Text
   | Plain String
   | StrikeThrough String
   | TeXMath String
