@@ -387,8 +387,10 @@ instance Parse Section where
 
     skipEmptyLines
     _ <- parserTrace "Section:Maybe [Text]" ()
-    ts  <- P.optionMaybe . P.many1 . P.try $ parse :: Parser (Maybe [Text])
-    _ <- parserTrace "Section:/Maybe [Text]" ()
+    tss <- P.optionMaybe . P.many1 $ (P.many1 (P.try parse) <* skipEmptyLines)
+          :: Parser (Maybe [[Text]])
+    let ts = intercalate [Text [Plain []]] <$> tss
+    _ <- parserTrace "Section:/Maybe [Text]" tss
 
     skipEmptyLines
     _ <- parserTrace "Section:Maybe SourceBlock" ()

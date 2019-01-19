@@ -46,7 +46,7 @@ import qualified Options.Applicative as O
 import qualified Text.PrettyPrint as PP
 {-# LINE 134 "ccweb.org" #-}
 import qualified System.Console.ANSI as ANSI
-{-# LINE 510 "ccweb.org" #-}
+{-# LINE 512 "ccweb.org" #-}
 import qualified System.Info as Sys
 import qualified Control.Exception as E
 {-# LINE 12 "org/doc.org" #-}
@@ -891,26 +891,28 @@ instance Parse Section where
 {-# LINE 388 "ccweb.org" #-}
     skipEmptyLines
     _ <- parserTrace "Section:Maybe [Text]" ()
-    ts  <- P.optionMaybe . P.many1 . P.try $ parse :: Parser (Maybe [Text])
-    _ <- parserTrace "Section:/Maybe [Text]" ()
+    tss <- P.optionMaybe . P.many1 $ (P.many1 (P.try parse) <* skipEmptyLines)
+          :: Parser (Maybe [[Text]])
+    let ts = intercalate [Text [Plain []]] <$> tss
+    _ <- parserTrace "Section:/Maybe [Text]" tss
 
-{-# LINE 393 "ccweb.org" #-}
+{-# LINE 395 "ccweb.org" #-}
     skipEmptyLines
     _ <- parserTrace "Section:Maybe SourceBlock" ()
     c <- case (ts, h) of
           (Nothing, Nothing) -> Just <$> (parse :: Parser SourceBlock)
           (_, _) -> P.optionMaybe $ parse :: Parser (Maybe SourceBlock)
 
-{-# LINE 399 "ccweb.org" #-}
+{-# LINE 401 "ccweb.org" #-}
     skipEmptyLines
 
-{-# LINE 401 "ccweb.org" #-}
+{-# LINE 403 "ccweb.org" #-}
     _ <- parserTrace "/Section" ()
 
-{-# LINE 403 "ccweb.org" #-}
+{-# LINE 405 "ccweb.org" #-}
     succeedWhen (isJust h || isJust ts || isJust c)
 
-{-# LINE 405 "ccweb.org" #-}
+{-# LINE 407 "ccweb.org" #-}
     state <- P.getState
     let n = 1 + sectionCounter state
         ps' = top . propertyStack $ state
@@ -923,7 +925,7 @@ instance Parse Section where
       , documentation = fromMaybe [] ts
       , sectionSourceBlock = c
       }
-{-# LINE 423 "ccweb.org" #-}
+{-# LINE 425 "ccweb.org" #-}
 instance Parse Keyword where
   parse = propertyKeyword <|> titleKeyword <|> authorKeyword <|> otherKeyword
     where
@@ -951,7 +953,7 @@ instance Parse Keyword where
                                             spaces1)
 {-# LINE 245 "ccweb.org" #-}
                               return $ Map.singleton p kvs
-{-# LINE 431 "ccweb.org" #-}
+{-# LINE 433 "ccweb.org" #-}
       titleKeyword = do
         keywordStart "#+TITLE:"
         TitleKeyword <$> parse
@@ -961,12 +963,12 @@ instance Parse Keyword where
         _ <- endOfLine
         return $ OtherKeyword t
       keywordStart h = void $ P.try (P.string h *> spaces)
-{-# LINE 444 "ccweb.org" #-}
+{-# LINE 446 "ccweb.org" #-}
 headerProperties :: [Keyword] -> Properties
 headerProperties = foldl acc mempty where
     acc a (PropertyKeyword p) = Map.union p a
     acc a _ = a
-{-# LINE 454 "ccweb.org" #-}
+{-# LINE 456 "ccweb.org" #-}
 instance Parse Document where
   parse = do
     _ <- parserTrace "Document" ()
@@ -978,11 +980,11 @@ instance Parse Document where
     _ <- parserTrace "Document:/Sections" ()
     skipEmptyLines *> P.eof
     parserTrace "/Document" $ Document { keywords = hs , sections = ss }
-{-# LINE 469 "ccweb.org" #-}
+{-# LINE 471 "ccweb.org" #-}
 readOrgFile :: LogLevel -> FilePath -> IO (OrgLines, Document)
 readOrgFile lvl fp = do
   ingested <- fromList <$> ingest fp :: IO OrgLines
-{-# LINE 483 "ccweb.org" #-}
+{-# LINE 485 "ccweb.org" #-}
   let styp = ( Atom "system-type"
              , Atom $ case Sys.os of
                         "linux" -> "gnu/linux"
@@ -992,31 +994,31 @@ readOrgFile lvl fp = do
       atomize k = fmap ((Atom k,) . Atom)
   hnam <- (SExpr [Atom "system-name"],) . Atom <$> getHostName
   pfam <- atomize "dmi/product-family"  <$> (
-{-# LINE 500 "ccweb.org" #-}
+{-# LINE 502 "ccweb.org" #-}
                                              \p -> either (\_ -> Nothing) (Just . reverse . dropWhile isSpace . reverse)
                                                   <$> (E.try (readFile $ "/sys/devices/virtual/dmi/id" F.</> p)
                                                        :: IO (Either E.IOException String))
-{-# LINE 491 "ccweb.org" #-}
+{-# LINE 493 "ccweb.org" #-}
                                                                                            ) "product_family"
   pnam <- atomize "dmi/product-name"    <$> (
-{-# LINE 500 "ccweb.org" #-}
+{-# LINE 502 "ccweb.org" #-}
                                              \p -> either (\_ -> Nothing) (Just . reverse . dropWhile isSpace . reverse)
                                                   <$> (E.try (readFile $ "/sys/devices/virtual/dmi/id" F.</> p)
                                                        :: IO (Either E.IOException String))
-{-# LINE 492 "ccweb.org" #-}
+{-# LINE 494 "ccweb.org" #-}
                                                                                            ) "product_name"
   pver <- atomize "dmi/product-version" <$> (
-{-# LINE 500 "ccweb.org" #-}
+{-# LINE 502 "ccweb.org" #-}
                                              \p -> either (\_ -> Nothing) (Just . reverse . dropWhile isSpace . reverse)
                                                   <$> (E.try (readFile $ "/sys/devices/virtual/dmi/id" F.</> p)
                                                        :: IO (Either E.IOException String))
-{-# LINE 493 "ccweb.org" #-}
-                                                                                           ) "product_version"
-{-# LINE 493 "ccweb.org" #-}
-  
 {-# LINE 495 "ccweb.org" #-}
+                                                                                           ) "product_version"
+{-# LINE 495 "ccweb.org" #-}
+  
+{-# LINE 497 "ccweb.org" #-}
   let ctx = Map.fromList $ styp : hnam : catMaybes [pfam, pnam, pver]
-{-# LINE 473 "ccweb.org" #-}
+{-# LINE 475 "ccweb.org" #-}
   let doc = fromEither $ P.runParser
         (parse :: Parser Document)
         initialParserState{ evalContext = ctx, parserLogLevel = lvl }
