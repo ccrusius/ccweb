@@ -164,15 +164,16 @@ data TextElement =
   | Italics Text
   | Plain String
   | StrikeThrough String
-  | TeXMath String
+  | InlineMath String
+  | DisplayMath String
   | Verbatim String
   deriving (Eq, Ord, Show)
-{-# LINE 423 "org/doc.org" #-}
+{-# LINE 425 "org/doc.org" #-}
 trim :: Text -> Text
 trim (Text (Plain []:ys))       = trim $ Text ys
 trim (Text (Plain (' ':xs):ys)) = trim $ Text (Plain xs:ys)
 trim  t                         = t
-{-# LINE 433 "org/doc.org" #-}
+{-# LINE 435 "org/doc.org" #-}
 type DocumentPartition = Map.Map SourceBlockId [Section]
 {-# LINE 27 "org/doc.org" #-}
 instance Pretty Document where
@@ -229,7 +230,7 @@ instance Pretty CodeElement where
     PP.parens $ PP.hcat [pretty p, PP.colon, pretty s]
   pretty (SectionReference p t) =
     PP.hcat [pretty p, PP.colon, PP.char '〈', pretty t, PP.char '〉']
-{-# LINE 400 "org/doc.org" #-}
+{-# LINE 401 "org/doc.org" #-}
 instance Pretty TextElement where
   pretty = \case
     (Bold a)          -> pretty' "bold" a
@@ -237,7 +238,8 @@ instance Pretty TextElement where
     (Italics a)       -> pretty' "italic" a
     (Plain a)         -> pretty a
     (StrikeThrough a) -> pretty' "strike" a
-    (TeXMath a)       -> pretty' "TeX" a
+    (InlineMath a)    -> pretty' "$TeX$" a
+    (DisplayMath a)   -> pretty' "$$TeX$$" a
     (Verbatim a)      -> pretty' "verbatim" a
     (HyperLink a b)   -> PP.hcat [ pretty "link"
                                 , PP.braces (pretty a)
@@ -480,20 +482,20 @@ eitherMany1 :: Parser end -> Parser a -> Parser (Either end [a])
 eitherMany1 end p =
   (Left <$> P.try end) <|>
   (Right <$> many1Till p (void endOfLine <|> void end))
-{-# LINE 414 "org/parser.org" #-}
+{-# LINE 438 "org/parser.org" #-}
 upx :: Maybe Char -> String -> [TextElement] -> [TextElement]
 upx Nothing  []    elts = elts
 upx Nothing  plain elts = Plain (reverse plain) : elts
 upx (Just c) plain elts = Plain (reverse $ c : plain) : elts
-{-# LINE 422 "org/parser.org" #-}
+{-# LINE 446 "org/parser.org" #-}
 textAcc :: (String, [TextElement]) -> Parser (String, [TextElement])
 textAcc (plain, text) =
-{-# LINE 437 "org/parser.org" #-}
+{-# LINE 466 "org/parser.org" #-}
   (P.eof *> parserTrace "Text:/EOF" ([], upx Nothing plain text))
   <|> (endOfLine *> parserTrace "Text:/EOL" ([], upx Nothing plain text))
-{-# LINE 425 "org/parser.org" #-}
+{-# LINE 449 "org/parser.org" #-}
   <|> (
-{-# LINE 443 "org/parser.org" #-}
+{-# LINE 472 "org/parser.org" #-}
        do
          beginningOfLine
          P.lookAhead . P.choice $ map P.try
@@ -502,10 +504,10 @@ textAcc (plain, text) =
            , void (parse :: Parser Headline)
            ]
          parserTrace "Text:/Break" ([], upx Nothing plain text)
-{-# LINE 425 "org/parser.org" #-}
+{-# LINE 449 "org/parser.org" #-}
                                                                )
   <|> (
-{-# LINE 455 "org/parser.org" #-}
+{-# LINE 420 "org/parser.org" #-}
        P.try $ do
          url <- P.string "[[" *> many1Till anyChar (P.string "][" <|> P.string "]]")
          txt <- P.string "][" <|> P.string "]]" >>= \case
@@ -514,55 +516,67 @@ textAcc (plain, text) =
          let hyp = HyperLink url txt
          _ <- parserTrace "Text:/HyperLink" hyp
          textAcc $ ([], hyp : upx Nothing plain text)
-{-# LINE 426 "org/parser.org" #-}
+{-# LINE 450 "org/parser.org" #-}
                                                      )
   <|>
   (do
+      markup <- P.try (
+{-# LINE 412 "org/parser.org" #-}
+                       (DisplayMath <$> (P.try (P.string "$$") *> P.manyTill P.anyChar (P.try $ P.string "$$")))
+                       <|>
+                       (InlineMath <$> (P.char '$' *> P.manyTill P.anyChar (P.char '$')))
+                       :: Parser TextElement
+{-# LINE 453 "org/parser.org" #-}
+                                            ) >>= parserTrace "Text/TeX"
+      textAcc $ ([], markup : upx Nothing plain text)
+  )
+  <|>
+  (do
       (c, markup) <- (
-{-# LINE 388 "org/parser.org" #-}
+{-# LINE 393 "org/parser.org" #-}
                       P.try $ do
                         (pre, marker) <- (>>= parserTrace "Text:Markup:/Start") (
-{-# LINE 355 "org/parser.org" #-}
+{-# LINE 360 "org/parser.org" #-}
                                                                                  P.try $ do
                                                                                    p <- (
-{-# LINE 332 "org/parser.org" #-}
+{-# LINE 337 "org/parser.org" #-}
                                                                                          (beginningOfLine *> return Nothing)
                                                                                          <|> (Just <$> satisfy (\c -> isSpace c || elem c "({'\""))
                                                                                          :: Parser (Maybe Char)
-{-# LINE 356 "org/parser.org" #-}
+{-# LINE 361 "org/parser.org" #-}
                                                                                                                )
-                                                                                   m <- (P.oneOf "*~/+$=")
+                                                                                   m <- (P.oneOf "*~/+=")
                                                                                    _ <- P.lookAhead (
-{-# LINE 321 "org/parser.org" #-}
+{-# LINE 326 "org/parser.org" #-}
                                                                                                      satisfy (\c -> not (isSpace c) && notElem c ",'")
                                                                                                      :: Parser Char
-{-# LINE 358 "org/parser.org" #-}
+{-# LINE 363 "org/parser.org" #-}
                                                                                                                    )
                                                                                    return (p,m)
                                                                                  :: Parser (Maybe Char, Char)
-{-# LINE 389 "org/parser.org" #-}
+{-# LINE 394 "org/parser.org" #-}
                                                                                                              )
                         p <- P.getPosition
                         b1 <- (>>= parserTrace "Text:Markup:/BodyA") (manyTill anyChar (
-{-# LINE 371 "org/parser.org" #-}
+{-# LINE 376 "org/parser.org" #-}
                                                                                         P.try $
                                                                                           (
-{-# LINE 321 "org/parser.org" #-}
+{-# LINE 326 "org/parser.org" #-}
                                                                                            satisfy (\c -> not (isSpace c) && notElem c ",'")
                                                                                            :: Parser Char
-{-# LINE 372 "org/parser.org" #-}
+{-# LINE 377 "org/parser.org" #-}
                                                                                                          )
                                                                                           <* P.char marker
                                                                                           <* P.lookAhead (
-{-# LINE 342 "org/parser.org" #-}
+{-# LINE 347 "org/parser.org" #-}
                                                                                                           (P.eof *> return Nothing)
                                                                                                           <|> Just <$> satisfy (\c -> isSpace c || elem c "-.,:!?)}'\"")
                                                                                                           <|> Just <$> endOfLine
                                                                                                           :: Parser (Maybe Char)
-{-# LINE 374 "org/parser.org" #-}
+{-# LINE 379 "org/parser.org" #-}
                                                                                                                                 )
                                                                                         :: Parser Char
-{-# LINE 391 "org/parser.org" #-}
+{-# LINE 396 "org/parser.org" #-}
                                                                                                       ))
                         b2 <- (>>= parserTrace "Text:Markup:/BodyB") ((:[]) <$> anyChar)
                         _ <- char marker
@@ -572,23 +586,22 @@ textAcc (plain, text) =
                           '~' -> InlineCode body
                           '/' -> Italics $ textFromString p body
                           '+' -> StrikeThrough body
-                          '$' -> TeXMath body
                           '=' -> Verbatim body
                           e   -> error $ "unknown markup marker '" ++ show e ++ "'"
                       :: Parser (Maybe Char, TextElement)
-{-# LINE 429 "org/parser.org" #-}
+{-# LINE 458 "org/parser.org" #-}
                                                          ) >>= parserTrace "Text:/Markup"
       textAcc $ ([], markup : upx c plain text)
   )
   <|> (anyChar >>= textAcc . (,text) . (:plain))
-{-# LINE 467 "org/parser.org" #-}
+{-# LINE 484 "org/parser.org" #-}
 textTill :: Parser end -> Parser Text
 textTill end = do
   _ <- parserTrace "TextTill" ()
   p <- P.getPosition
   t <- P.manyTill anyChar end
   parserTrace "/TextTill" $ textFromString p t
-{-# LINE 477 "org/parser.org" #-}
+{-# LINE 494 "org/parser.org" #-}
 instance Parse Text where
   parse = do
     _ <- parserTrace "Text" ()
@@ -596,9 +609,9 @@ instance Parse Text where
     failWhen (null ret) P.<?> "empty text"
     _ <- parserDebug "/Text" ret
 
-{-# LINE 484 "org/parser.org" #-}
+{-# LINE 501 "org/parser.org" #-}
     return $ Text ret
-{-# LINE 489 "org/parser.org" #-}
+{-# LINE 506 "org/parser.org" #-}
 textFromString :: P.SourcePos -> String -> Text
 textFromString p s = fromEither $ P.runParser
     (parse :: Parser Text)
@@ -1107,7 +1120,7 @@ main = do
 
 {-# LINE 15 "org/weave.org" #-}
   let part = 
-{-# LINE 438 "org/doc.org" #-}
+{-# LINE 440 "org/doc.org" #-}
              ((Map.fromList . map (\bs -> (fst (head bs), map snd bs)))
                   :: [[(SourceBlockId, Section)]] -> DocumentPartition)
                . (groupWith fst
@@ -1150,7 +1163,7 @@ main = do
 
 {-# LINE 37 "org/weave.org" #-}
       F.fileExist scnFile >>= (`when` F.removeLink scnFile)
-{-# LINE 264 "org/weave.org" #-}
+{-# LINE 265 "org/weave.org" #-}
       do
         writeFile scnFile []
 {-# LINE 38 "org/weave.org" #-}
@@ -1213,21 +1226,22 @@ instance Weave TextElement where
     (InlineCode s) -> between "\\hbox{\\tentex " "}" <$> weave s
     (Verbatim s) -> between "\\hbox{\\tentex " "}" <$> weave s
     (StrikeThrough _) -> error $ "not implemented: StrikeThrough"
-    (TeXMath s) -> return $ between "$" "$" s
+    (InlineMath s) -> return $ between "$" "$" s
+    (DisplayMath s) -> return $ between "$$" "$$" s
     (HyperLink a d) -> (\t -> concat ["\\pdfURL{", t, "}{" , a, "}"]) <$> weave d
     where between before after s = before <> s <> after
 
-{-# LINE 147 "org/weave.org" #-}
+{-# LINE 148 "org/weave.org" #-}
 concatMapM :: Monad m => (a -> m [b]) -> [a] -> m [b]
 concatMapM f as = concat <$> mapM f as
-{-# LINE 153 "org/weave.org" #-}
+{-# LINE 154 "org/weave.org" #-}
 instance Weave Text where
   weave (Text ts) = concat <$> mapM weave ts
-{-# LINE 162 "org/weave.org" #-}
+{-# LINE 163 "org/weave.org" #-}
 instance Weave Section where
   weave s = do
     header <- (
-{-# LINE 172 "org/weave.org" #-}
+{-# LINE 173 "org/weave.org" #-}
                do
                  concat <$>
                    case sectionHeadline s of
@@ -1239,15 +1253,15 @@ instance Weave Section where
                               , "{", show (sectionNumber s), "}"
                               , title, "."
                               ]
-{-# LINE 164 "org/weave.org" #-}
+{-# LINE 165 "org/weave.org" #-}
                                ) :: Weaver String
     text <- (
-{-# LINE 187 "org/weave.org" #-}
+{-# LINE 188 "org/weave.org" #-}
              mapM weave (documentation s)
-{-# LINE 165 "org/weave.org" #-}
+{-# LINE 166 "org/weave.org" #-}
                                          ) :: Weaver [String]
     code <- (
-{-# LINE 192 "org/weave.org" #-}
+{-# LINE 193 "org/weave.org" #-}
              case sectionSourceBlock s of
                Nothing -> return []
                Just b -> do
@@ -1257,11 +1271,11 @@ instance Weave Section where
                      firstNo = sectionNumber . head <$> sections
                      secno = sectionNumber s
                  n <- (
-{-# LINE 232 "org/weave.org" #-}
+{-# LINE 233 "org/weave.org" #-}
                        \ref -> case sourceBlockId (fromJust $ sectionSourceBlock ref) of
                                 Nothing -> return "\\X:$\\bullet$\\X"
                                 Just id -> weave id
-{-# LINE 200 "org/weave.org" #-}
+{-# LINE 201 "org/weave.org" #-}
                                                    ) s :: Weaver String
                  ls <- mapM weave (blockLines b) :: Weaver [String]
                  let head = concat
@@ -1273,10 +1287,10 @@ instance Weave Section where
                        , "\\equiv{}$"
                        ]
                  return $ intercalate "\\6" (head : ls) ++ "\\par"
-{-# LINE 166 "org/weave.org" #-}
+{-# LINE 167 "org/weave.org" #-}
                                                                   ) :: Weaver String
     return $ unlines (header : text) ++ code ++ "\\fi\n"
-{-# LINE 215 "org/weave.org" #-}
+{-# LINE 216 "org/weave.org" #-}
 instance Weave CodeElement where
   weave (Literal _ s) = do
     s' <- weave s
@@ -1284,10 +1298,10 @@ instance Weave CodeElement where
       ++ map (\c -> if c == ' ' then '~' else c) s'
       ++ "}"
   weave (SectionReference _ r) = weave (NamedBlock r)
-{-# LINE 226 "org/weave.org" #-}
+{-# LINE 227 "org/weave.org" #-}
 instance Weave CodeLine where
   weave (CodeLine es) = concatMapM weave es
-{-# LINE 239 "org/weave.org" #-}
+{-# LINE 240 "org/weave.org" #-}
 instance Weave SourceBlockId where
   weave id = do
     firstNo <- sectionNumber . head . (flip (Map.!) id) . docPartition <$> get
@@ -1295,7 +1309,7 @@ instance Weave SourceBlockId where
       FileBlock file -> ("$\\Rightarrow\\,$" ++) <$> weave (Verbatim file)
       NamedBlock name -> weave name
     return . concat $ ["\\X", show firstNo, ":", tangledName, "\\X"]
-{-# LINE 250 "org/weave.org" #-}
+{-# LINE 251 "org/weave.org" #-}
 instance Weave Document where
   weave doc = do
     secs <- concat <$> mapM weave (sections doc)

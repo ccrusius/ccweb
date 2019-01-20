@@ -386,7 +386,8 @@ data TextElement =
   | Italics Text
   | Plain String
   | StrikeThrough String
-  | TeXMath String
+  | InlineMath String
+  | DisplayMath String
   | Verbatim String
   deriving (Eq, Ord, Show)
 #+END_SRC
@@ -404,7 +405,8 @@ instance Pretty TextElement where
     (Italics a)       -> pretty' "italic" a
     (Plain a)         -> pretty a
     (StrikeThrough a) -> pretty' "strike" a
-    (TeXMath a)       -> pretty' "TeX" a
+    (InlineMath a)    -> pretty' "$TeX$" a
+    (DisplayMath a)   -> pretty' "$$TeX$$" a
     (Verbatim a)      -> pretty' "verbatim" a
     (HyperLink a b)   -> PP.hcat [ pretty "link"
                                 , PP.braces (pretty a)

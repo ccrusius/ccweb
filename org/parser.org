@@ -311,7 +311,12 @@ eitherMany1 end p =
 
 I tried to follow the
 [[https://orgmode.org/worg/dev/org-syntax.html#Emphasis_Markers][rules]] for
-parsing markup somewhat closely, but there will be some differences.
+parsing markup somewhat closely, but there will be some
+differences. The rules state that markup is of the form
+$$\hbox{{\tt PRE MARKER BORDER BODY BORDER MARKER POST},}$$
+where the intricacies of the meaning of the components is so that one
+can write things like ``and/or and this/that'' without implying that
+``or and this'' should be in italics.
 
 The first and last characters of a markup text must match what the Org
 reference calls a ``border.'' I allow double-quotes.
@@ -354,7 +359,7 @@ parse =BORDER=.
 #+BEGIN_SRC haskell
 P.try $ do
   p <- (<<Parse the character before a markup>>)
-  m <- (P.oneOf "*~/+$=")
+  m <- (P.oneOf "*~/+=")
   _ <- P.lookAhead (<<Parse a markup border character>>)
   return (p,m)
 :: Parser (Maybe Char, Char)
@@ -397,10 +402,29 @@ P.try $ do
     '~' -> InlineCode body
     '/' -> Italics $ textFromString p body
     '+' -> StrikeThrough body
-    '$' -> TeXMath body
     '=' -> Verbatim body
     e   -> error $ "unknown markup marker '" ++ show e ++ "'"
 :: Parser (Maybe Char, TextElement)
+#+END_SRC
+
+#+NAME: Parse inline $\TeX$
+#+BEGIN_SRC haskell
+(DisplayMath <$> (P.try (P.string "$$") *> P.manyTill P.anyChar (P.try $ P.string "$$")))
+<|>
+(InlineMath <$> (P.char '$' *> P.manyTill P.anyChar (P.char '$')))
+:: Parser TextElement
+#+END_SRC
+
+#+NAME: Parse a hyperlink
+#+BEGIN_SRC haskell
+P.try $ do
+  url <- P.string "[[" *> many1Till anyChar (P.string "][" <|> P.string "]]")
+  txt <- P.string "][" <|> P.string "]]" >>= \case
+    "]]" -> return $ Text [Verbatim url]
+    _    -> textTill (P.string "]]")
+  let hyp = HyperLink url txt
+  _ <- parserTrace "Text:/HyperLink" hyp
+  textAcc $ ([], hyp : upx Nothing plain text)
 #+END_SRC
 
 ** Text
@@ -426,6 +450,11 @@ textAcc (plain, text) =
   <|> (<<Parse a hyperlink>>)
   <|>
   (do
+      markup <- P.try (<<Parse inline $\TeX$>>) >>= parserTrace "Text/TeX"
+      textAcc $ ([], markup : upx Nothing plain text)
+  )
+  <|>
+  (do
       (c, markup) <- (<<Parse a markup text element>>) >>= parserTrace "Text:/Markup"
       textAcc $ ([], markup : upx c plain text)
   )
@@ -448,18 +477,6 @@ do
     , void (parse :: Parser Headline)
     ]
   parserTrace "Text:/Break" ([], upx Nothing plain text)
-#+END_SRC
-
-#+NAME: Parse a hyperlink
-#+BEGIN_SRC haskell
-P.try $ do
-  url <- P.string "[[" *> many1Till anyChar (P.string "][" <|> P.string "]]")
-  txt <- P.string "][" <|> P.string "]]" >>= \case
-    "]]" -> return $ Text [Verbatim url]
-    _    -> textTill (P.string "]]")
-  let hyp = HyperLink url txt
-  _ <- parserTrace "Text:/HyperLink" hyp
-  textAcc $ ([], hyp : upx Nothing plain text)
 #+END_SRC
 
 #+NAME: Parser

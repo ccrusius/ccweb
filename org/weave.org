@@ -140,7 +140,8 @@ instance Weave TextElement where
     (InlineCode s) -> between "\\hbox{\\tentex " "}" <$> weave s
     (Verbatim s) -> between "\\hbox{\\tentex " "}" <$> weave s
     (StrikeThrough _) -> error $ "not implemented: StrikeThrough"
-    (TeXMath s) -> return $ between "$" "$" s
+    (InlineMath s) -> return $ between "$" "$" s
+    (DisplayMath s) -> return $ between "$$" "$$" s
     (HyperLink a d) -> (\t -> concat ["\\pdfURL{", t, "}{" , a, "}"]) <$> weave d
     where between before after s = before <> s <> after
 
