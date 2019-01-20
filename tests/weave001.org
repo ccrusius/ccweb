@@ -41,4 +41,4 @@ putStrLn "unnamed section with text and code"
 
 This and/or that.
 
-Some /nested *markup $here$*/
+Some /nested *markup* $here$ to see/

@@ -455,47 +455,45 @@ crlf = char '\r' *> char '\n' P.<?> "crlf new-line"
 {-# LINE 256 "org/parser.org" #-}
 endOfLine :: Parser Char
 endOfLine = newline <|> crlf P.<?> "new-line"
-{-# LINE 262 "org/parser.org" #-}
+{-# LINE 267 "org/parser.org" #-}
 beginningOfLine :: Parser ()
 beginningOfLine = do
   c <- P.sourceColumn <$> P.getPosition
-  --_ <- parserTrace ("BOL:" ++ show c ++ ":" ++ show (c == 1))
   succeedWhen (c == 1)
-  --_ <- parserTrace ("/BOL:" ++ show c ++ ":" ++ show (c == 1))
-{-# LINE 272 "org/parser.org" #-}
+{-# LINE 278 "org/parser.org" #-}
 succeedWhen :: Bool -> Parser ()
 succeedWhen True = return ()
 succeedWhen False = void $ satisfy (\_ -> False)
 
-{-# LINE 276 "org/parser.org" #-}
+{-# LINE 282 "org/parser.org" #-}
 failWhen :: Bool -> Parser ()
 failWhen = succeedWhen . not
-{-# LINE 289 "org/parser.org" #-}
+{-# LINE 295 "org/parser.org" #-}
 manyTill :: Parser a -> Parser end -> Parser [a]
 manyTill p = P.manyTill p . P.lookAhead
 
-{-# LINE 292 "org/parser.org" #-}
+{-# LINE 298 "org/parser.org" #-}
 many1Till :: Parser a -> Parser end -> Parser [a]
 many1Till p = liftA2 (:) p . manyTill p
-{-# LINE 298 "org/parser.org" #-}
+{-# LINE 304 "org/parser.org" #-}
 eitherMany1 :: Parser end -> Parser a -> Parser (Either end [a])
 eitherMany1 end p =
   (Left <$> P.try end) <|>
   (Right <$> many1Till p (void endOfLine <|> void end))
-{-# LINE 403 "org/parser.org" #-}
+{-# LINE 414 "org/parser.org" #-}
 upx :: Maybe Char -> String -> [TextElement] -> [TextElement]
 upx Nothing  []    elts = elts
 upx Nothing  plain elts = Plain (reverse plain) : elts
 upx (Just c) plain elts = Plain (reverse $ c : plain) : elts
-{-# LINE 411 "org/parser.org" #-}
+{-# LINE 422 "org/parser.org" #-}
 textAcc :: (String, [TextElement]) -> Parser (String, [TextElement])
 textAcc (plain, text) =
-{-# LINE 426 "org/parser.org" #-}
+{-# LINE 437 "org/parser.org" #-}
   (P.eof *> parserTrace "Text:/EOF" ([], upx Nothing plain text))
   <|> (endOfLine *> parserTrace "Text:/EOL" ([], upx Nothing plain text))
-{-# LINE 414 "org/parser.org" #-}
+{-# LINE 425 "org/parser.org" #-}
   <|> (
-{-# LINE 432 "org/parser.org" #-}
+{-# LINE 443 "org/parser.org" #-}
        do
          beginningOfLine
          P.lookAhead . P.choice $ map P.try
@@ -504,10 +502,10 @@ textAcc (plain, text) =
            , void (parse :: Parser Headline)
            ]
          parserTrace "Text:/Break" ([], upx Nothing plain text)
-{-# LINE 414 "org/parser.org" #-}
+{-# LINE 425 "org/parser.org" #-}
                                                                )
   <|> (
-{-# LINE 444 "org/parser.org" #-}
+{-# LINE 455 "org/parser.org" #-}
        P.try $ do
          url <- P.string "[[" *> many1Till anyChar (P.string "][" <|> P.string "]]")
          txt <- P.string "][" <|> P.string "]]" >>= \case
@@ -516,94 +514,81 @@ textAcc (plain, text) =
          let hyp = HyperLink url txt
          _ <- parserTrace "Text:/HyperLink" hyp
          textAcc $ ([], hyp : upx Nothing plain text)
-{-# LINE 415 "org/parser.org" #-}
+{-# LINE 426 "org/parser.org" #-}
                                                      )
   <|>
   (do
       (c, markup) <- (
-{-# LINE 391 "org/parser.org" #-}
-                      P.choice $ map (P.try . (
-{-# LINE 365 "org/parser.org" #-}
-                                               \marker ->
-                                                 do
-                                                   pre <- 
-{-# LINE 342 "org/parser.org" #-}
-                                                          P.try $
-                                                            (
-{-# LINE 324 "org/parser.org" #-}
-                                                             (beginningOfLine *> return Nothing)
-                                                             <|> (Just <$> satisfy (\c -> isSpace c || elem c "({'\""))
-                                                             :: Parser (Maybe Char)
-{-# LINE 343 "org/parser.org" #-}
-                                                                                   )
-                                                            <* P.char marker
-                                                            <* P.lookAhead (
-{-# LINE 313 "org/parser.org" #-}
-                                                                            satisfy (\c -> not (isSpace c) && notElem c ",'\"")
-                                                                            :: Parser Char
-{-# LINE 345 "org/parser.org" #-}
-                                                                                          )
-                                                          :: Parser (Maybe Char)
-{-# LINE 368 "org/parser.org" #-}
-                                                   p <- P.getPosition
-                                                   body <- manyTill anyChar (
+{-# LINE 388 "org/parser.org" #-}
+                      P.try $ do
+                        (pre, marker) <- (>>= parserTrace "Text:Markup:/Start") (
+{-# LINE 355 "org/parser.org" #-}
+                                                                                 P.try $ do
+                                                                                   p <- (
+{-# LINE 332 "org/parser.org" #-}
+                                                                                         (beginningOfLine *> return Nothing)
+                                                                                         <|> (Just <$> satisfy (\c -> isSpace c || elem c "({'\""))
+                                                                                         :: Parser (Maybe Char)
 {-# LINE 356 "org/parser.org" #-}
-                                                                             P.try $
-                                                                               (
-{-# LINE 313 "org/parser.org" #-}
-                                                                                satisfy (\c -> not (isSpace c) && notElem c ",'\"")
-                                                                                :: Parser Char
-{-# LINE 357 "org/parser.org" #-}
-                                                                                              )
-                                                                               <* P.char marker
-                                                                               <* P.lookAhead (
-{-# LINE 334 "org/parser.org" #-}
-                                                                                               (P.eof *> return Nothing)
-                                                                                               <|> Just <$> satisfy (\c -> isSpace c || elem c "-.,:!?)}'\"")
-                                                                                               <|> Just <$> endOfLine
-                                                                                               :: Parser (Maybe Char)
-{-# LINE 359 "org/parser.org" #-}
-                                                                                                                     )
-                                                                             :: Parser Char
-{-# LINE 369 "org/parser.org" #-}
-                                                                                           )
-                                                   border <- anyChar
-                                                   _ <- P.char marker
-                                                   let body' = body ++ [border]
-                                                       body'' = fromEither $ P.runParser
-                                                                  (parse :: Parser Text)
-                                                                  initialParserState
-                                                                  (P.sourceName p)
-                                                                  (fromList [OrgLine p body'] :: OrgLines)
-                                                   return . (pre,) $ case marker of
-                                                     '*' -> Bold body''
-                                                     '~' -> InlineCode body'
-                                                     '/' -> Italics body''
-                                                     '+' -> StrikeThrough body'
-                                                     '$' -> TeXMath body'
-                                                     '=' -> Verbatim body'
-                                                     e   -> error $ "unknown markup marker '" ++ show e ++ "'"
-                                                 :: Parser (Maybe Char, TextElement)
+                                                                                                               )
+                                                                                   m <- (P.oneOf "*~/+$=")
+                                                                                   _ <- P.lookAhead (
+{-# LINE 321 "org/parser.org" #-}
+                                                                                                     satisfy (\c -> not (isSpace c) && notElem c ",'")
+                                                                                                     :: Parser Char
+{-# LINE 358 "org/parser.org" #-}
+                                                                                                                   )
+                                                                                   return (p,m)
+                                                                                 :: Parser (Maybe Char, Char)
+{-# LINE 389 "org/parser.org" #-}
+                                                                                                             )
+                        p <- P.getPosition
+                        b1 <- (>>= parserTrace "Text:Markup:/BodyA") (manyTill anyChar (
+{-# LINE 371 "org/parser.org" #-}
+                                                                                        P.try $
+                                                                                          (
+{-# LINE 321 "org/parser.org" #-}
+                                                                                           satisfy (\c -> not (isSpace c) && notElem c ",'")
+                                                                                           :: Parser Char
+{-# LINE 372 "org/parser.org" #-}
+                                                                                                         )
+                                                                                          <* P.char marker
+                                                                                          <* P.lookAhead (
+{-# LINE 342 "org/parser.org" #-}
+                                                                                                          (P.eof *> return Nothing)
+                                                                                                          <|> Just <$> satisfy (\c -> isSpace c || elem c "-.,:!?)}'\"")
+                                                                                                          <|> Just <$> endOfLine
+                                                                                                          :: Parser (Maybe Char)
+{-# LINE 374 "org/parser.org" #-}
+                                                                                                                                )
+                                                                                        :: Parser Char
 {-# LINE 391 "org/parser.org" #-}
-                                                                                    )) "*~/+$="
+                                                                                                      ))
+                        b2 <- (>>= parserTrace "Text:Markup:/BodyB") ((:[]) <$> anyChar)
+                        _ <- char marker
+                        let body = b1 ++ b2
+                        return . (pre,) $ case marker of
+                          '*' -> Bold $ textFromString p body
+                          '~' -> InlineCode body
+                          '/' -> Italics $ textFromString p body
+                          '+' -> StrikeThrough body
+                          '$' -> TeXMath body
+                          '=' -> Verbatim body
+                          e   -> error $ "unknown markup marker '" ++ show e ++ "'"
                       :: Parser (Maybe Char, TextElement)
-{-# LINE 418 "org/parser.org" #-}
+{-# LINE 429 "org/parser.org" #-}
                                                          ) >>= parserTrace "Text:/Markup"
       textAcc $ ([], markup : upx c plain text)
   )
   <|> (anyChar >>= textAcc . (,text) . (:plain))
-{-# LINE 456 "org/parser.org" #-}
+{-# LINE 467 "org/parser.org" #-}
 textTill :: Parser end -> Parser Text
 textTill end = do
   _ <- parserTrace "TextTill" ()
   p <- P.getPosition
   t <- P.manyTill anyChar end
-  parserTrace "/TextTill" . fromEither $ P.runParser
-    (parse :: Parser Text)
-    initialParserState
-    (P.sourceName p)
-    (fromList [OrgLine p t] :: OrgLines)
-{-# LINE 470 "org/parser.org" #-}
+  parserTrace "/TextTill" $ textFromString p t
+{-# LINE 477 "org/parser.org" #-}
 instance Parse Text where
   parse = do
     _ <- parserTrace "Text" ()
@@ -611,8 +596,15 @@ instance Parse Text where
     failWhen (null ret) P.<?> "empty text"
     _ <- parserDebug "/Text" ret
 
-{-# LINE 477 "org/parser.org" #-}
+{-# LINE 484 "org/parser.org" #-}
     return $ Text ret
+{-# LINE 489 "org/parser.org" #-}
+textFromString :: P.SourcePos -> String -> Text
+textFromString p s = fromEither $ P.runParser
+    (parse :: Parser Text)
+    initialParserState
+    (P.sourceName p)
+    (OrgLines [OrgLine p s])
 {-# LINE 151 "org/scaffold.org" #-}
 newtype Stack a = Stack [a]
 

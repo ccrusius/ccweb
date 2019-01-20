@@ -257,15 +257,21 @@ endOfLine :: Parser Char
 endOfLine = newline <|> crlf P.<?> "new-line"
 #+END_SRC
 
+There are places where I need to check whether or not the parser is
+positioned at the start of a line. This is more complicated, because
+it is not indicated by the character I am looking at, but at the
+/position/ of the character.
+
 #+NAME: Parser
 #+BEGIN_SRC haskell
 beginningOfLine :: Parser ()
 beginningOfLine = do
   c <- P.sourceColumn <$> P.getPosition
-  --_ <- parserTrace ("BOL:" ++ show c ++ ":" ++ show (c == 1))
   succeedWhen (c == 1)
-  --_ <- parserTrace ("/BOL:" ++ show c ++ ":" ++ show (c == 1))
 #+END_SRC
+
+The ~succeedWhen~ parser used above, and the corresponding ~failWhen~,
+are trivially implemented in terms of ~satisfy~.
 
 #+NAME: Parser
 #+BEGIN_SRC haskell
@@ -301,16 +307,18 @@ eitherMany1 end p =
   (Right <$> many1Till p (void endOfLine <|> void end))
 #+END_SRC
 
-** Text Markup
+** Markup
 
-The [[https://orgmode.org/worg/dev/org-syntax.html#Emphasis_Markers][rules]] for
+I tried to follow the
+[[https://orgmode.org/worg/dev/org-syntax.html#Emphasis_Markers][rules]] for
+parsing markup somewhat closely, but there will be some differences.
 
 The first and last characters of a markup text must match what the Org
-reference calls a ``border.''
+reference calls a ``border.'' I allow double-quotes.
 
 #+NAME: Parse a markup border character
 #+BEGIN_SRC haskell
-satisfy (\c -> not (isSpace c) && notElem c ",'\"")
+satisfy (\c -> not (isSpace c) && notElem c ",'")
 :: Parser Char
 #+END_SRC
 
@@ -337,19 +345,26 @@ the situation is the same with =eof= replaced for the beggining of a line.
 :: Parser (Maybe Char)
 #+END_SRC
 
-#+NAME: Parse the start of markup ~marker~
+A markup starts with a sequence =PRE MARKER BORDER=, which is parsed
+below. The parser returns =PRE=, in case it is not the beginning of
+the line, the =MARKER= found, and places the parsing stream ready to
+parse =BORDER=.
+
+#+NAME: Parse the start of markup
 #+BEGIN_SRC haskell
-P.try $
-  (<<Parse the character before a markup>>)
-  <* P.char marker
-  <* P.lookAhead (<<Parse a markup border character>>)
-:: Parser (Maybe Char)
+P.try $ do
+  p <- (<<Parse the character before a markup>>)
+  m <- (P.oneOf "*~/+$=")
+  _ <- P.lookAhead (<<Parse a markup border character>>)
+  return (p,m)
+:: Parser (Maybe Char, Char)
 #+END_SRC
 
-The markup ends with a border character, the marker, and some valid
-post-markup character. The parser, when it succeeds, returns the last
-markup character, and consumes the marker. This leaves the post-markup
-character ready for the next parser in line.
+A markup ends with =BORDER MARKER END=. The Org rules mentioned below
+seem to imply that the border that starts a markup can not be the one
+that ends it, but I support that case (and so does Org). That is
+parsed below a parser that returns =BORDER= and places the stream
+right before the first thing after the markup.
 
 #+NAME: Parse the end of markup ~marker~
 #+BEGIN_SRC haskell
@@ -360,35 +375,31 @@ P.try $
 :: Parser Char
 #+END_SRC
 
+I am now finally ready to parse a marked up text. After parsing the
+markup start, I read all the characters until the last =BORDER=
+character with the ~manyTill~ parser. I then parse =BORDER= with
+~anyChar~ and combine the two to get the markup body. The rest is
+simple, except for some markups that accept nested markups, where the
+process is repeated by parsing ~Text~ again from the body with
+~textFromString~.
+
 #+NAME: Parse a markup text element
 #+BEGIN_SRC haskell
-\marker ->
-  do
-    pre <- <<Parse the start of markup ~marker~>>
-    p <- P.getPosition
-    body <- manyTill anyChar (<<Parse the end of markup ~marker~>>)
-    border <- anyChar
-    _ <- P.char marker
-    let body' = body ++ [border]
-        body'' = fromEither $ P.runParser
-                   (parse :: Parser Text)
-                   initialParserState
-                   (P.sourceName p)
-                   (fromList [OrgLine p body'] :: OrgLines)
-    return . (pre,) $ case marker of
-      '*' -> Bold body''
-      '~' -> InlineCode body'
-      '/' -> Italics body''
-      '+' -> StrikeThrough body'
-      '$' -> TeXMath body'
-      '=' -> Verbatim body'
-      e   -> error $ "unknown markup marker '" ++ show e ++ "'"
-  :: Parser (Maybe Char, TextElement)
-#+END_SRC
-
-#+NAME: Parse all supported markups
-#+BEGIN_SRC haskell
-P.choice $ map (P.try . (<<Parse a markup text element>>)) "*~/+$="
+P.try $ do
+  (pre, marker) <- (>>= parserTrace "Text:Markup:/Start") (<<Parse the start of markup>>)
+  p <- P.getPosition
+  b1 <- (>>= parserTrace "Text:Markup:/BodyA") (manyTill anyChar (<<Parse the end of markup ~marker~>>))
+  b2 <- (>>= parserTrace "Text:Markup:/BodyB") ((:[]) <$> anyChar)
+  _ <- char marker
+  let body = b1 ++ b2
+  return . (pre,) $ case marker of
+    '*' -> Bold $ textFromString p body
+    '~' -> InlineCode body
+    '/' -> Italics $ textFromString p body
+    '+' -> StrikeThrough body
+    '$' -> TeXMath body
+    '=' -> Verbatim body
+    e   -> error $ "unknown markup marker '" ++ show e ++ "'"
 :: Parser (Maybe Char, TextElement)
 #+END_SRC
 
@@ -415,7 +426,7 @@ textAcc (plain, text) =
   <|> (<<Parse a hyperlink>>)
   <|>
   (do
-      (c, markup) <- (<<Parse all supported markups>>) >>= parserTrace "Text:/Markup"
+      (c, markup) <- (<<Parse a markup text element>>) >>= parserTrace "Text:/Markup"
       textAcc $ ([], markup : upx c plain text)
   )
   <|> (anyChar >>= textAcc . (,text) . (:plain))
@@ -458,11 +469,7 @@ textTill end = do
   _ <- parserTrace "TextTill" ()
   p <- P.getPosition
   t <- P.manyTill anyChar end
-  parserTrace "/TextTill" . fromEither $ P.runParser
-    (parse :: Parser Text)
-    initialParserState
-    (P.sourceName p)
-    (fromList [OrgLine p t] :: OrgLines)
+  parserTrace "/TextTill" $ textFromString p t
 #+END_SRC
 
 #+NAME: Parser
@@ -475,4 +482,14 @@ instance Parse Text where
     _ <- parserDebug "/Text" ret
 
     return $ Text ret
+#+END_SRC
+
+#+NAME: Parser
+#+BEGIN_SRC haskell
+textFromString :: P.SourcePos -> String -> Text
+textFromString p s = fromEither $ P.runParser
+    (parse :: Parser Text)
+    initialParserState
+    (P.sourceName p)
+    (OrgLines [OrgLine p s])
 #+END_SRC
