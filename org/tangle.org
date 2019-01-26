@@ -188,8 +188,8 @@ maybeAddLinePragma :: [Line] -> P.SourcePos -> SourceBlock -> Tangler [Line]
 maybeAddLinePragma ls pos block = do
   lang <- pragmaLanguage <$> get
   let pragma = LinePragma lang pos
-  return $ case (headerArg ":comments" block, show pragma) of
-    (Just (BoolAtom True), (_:_)) -> pragma : ls
+  return $ case (toBool <$> headerArg ":comments" block, show pragma) of
+    (Just True, (_:_)) -> pragma : ls
     _ -> ls
 #+END_SRC
 
@@ -387,8 +387,8 @@ tangleFile opts doc (fp, bs) = do
         Just (IntAtom mode) -> F.setFileMode fp $ fromIntegral mode
         Just e -> error $ "unsupported tangle-mode: " ++ show e
   where
-    mkDir = case headerArg ":mkdirp" (head bs) of
-              Just (BoolAtom x) -> x
+    mkDir = case (toBool <$> headerArg ":mkdirp" (head bs)) of
+              Just x -> x
               _ -> False
 #+END_SRC
 

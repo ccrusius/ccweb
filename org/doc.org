@@ -122,19 +122,38 @@ type Property   = Map.Map String SExpr
 type Properties = Map.Map String Property
 #+END_SRC
 
-There is no avoiding parsing the s-expressions.  For our purposes it
-will be useful to distinguish between a plain old atom and both
-numbers and a ``truth value.'' These values ought to have been called
-~Int~ and ~Bool~, but those were taken.
+There is no avoiding parsing the s-expressions.  For my purposes it
+will be useful to distinguish between a plain old atom and numbers.
 
 #+NAME: Document data model
 #+BEGIN_SRC haskell
 data SExpr =
   Atom String
-  | BoolAtom Bool
   | IntAtom Int
   | SExpr [SExpr]
   deriving (Eq, Ord)
+#+END_SRC
+
+Truth values are Lisp-y with a twist. The conversion from booleans to
+an S-expression is what one would expect.
+
+#+NAME: Document data model
+#+BEGIN_SRC haskell
+fromBool :: Bool -> SExpr
+fromBool False = SExpr []
+fromBool True = Atom "t"
+#+END_SRC
+
+The other way around is not: since I do not correctly evaluate
+S-expressions, I have to consider non-empty lists as ``expressions I
+don't know how to evaluate,'' and I assign a false value to them.
+
+#+NAME: Document data model
+#+BEGIN_SRC haskell
+toBool :: SExpr -> Bool
+toBool (Atom _) = True
+toBool (IntAtom _) = True
+toBool _ = False
 #+END_SRC
 
 Since the expressions we will encounter are simple, we print them all
@@ -144,8 +163,8 @@ in a single line.
 #+BEGIN_SRC haskell
 instance Show SExpr where
   show (Atom x) = x
-  show (BoolAtom x) = show x
   show (IntAtom x) = show x
+  show (SExpr []) = "nil"
   show (SExpr xs) = "(" ++ intercalate " " (map show xs) ++ ")"
 
 instance Pretty SExpr where
@@ -204,20 +223,20 @@ eval _ (Atom ('#':'o':x:y:z:[])) =
   where oct c = ord c - ord '0'
 #+END_SRC
 
-Next are the comparisons, including =string-suffix-p=
+Next are the comparisons.
 
 #+NAME: Evaluate an s-expression
 #+BEGIN_SRC haskell
-eval s (SExpr [Atom "eq", e1, e2]) = BoolAtom $ (eval s e1) == (eval s e2)
+eval s (SExpr [Atom "eq", e1, e2]) = fromBool $ (eval s e1) == (eval s e2)
 
 eval s (SExpr [Atom "string-prefix-p", prefix, expr]) =
   case (eval s prefix, eval s expr) of
-    (Atom s', Atom str) -> BoolAtom $ isPrefixOf s' str
+    (Atom s', Atom str) -> fromBool $ isPrefixOf s' str
     (e1, e2) -> SExpr [Atom "string-prefix-p", e1, e2]
 
 eval s (SExpr [Atom "string-suffix-p", suffix, expr]) =
   case (eval s suffix, eval s expr) of
-    (Atom s', Atom str) -> BoolAtom $ isSuffixOf s' str
+    (Atom s', Atom str) -> fromBool $ isSuffixOf s' str
     (e1, e2) -> SExpr [Atom "string-suffix-p", e1, e2]
 #+END_SRC
 
@@ -226,15 +245,14 @@ Now the conditionals.
 #+NAME: Evaluate an s-expression
 #+BEGIN_SRC haskell
 eval s (SExpr [Atom "when", expr, result]) =
-  case eval s expr of
-    BoolAtom True -> eval s result
-    expr' -> expr'
+  if toBool (eval s expr)
+  then eval s result
+  else fromBool False
 
 eval s (SExpr [Atom "unless", expr, result]) =
-  case eval s expr of
-    BoolAtom False -> eval s result
-    BoolAtom True  -> BoolAtom False
-    expr' -> expr'
+  if toBool (eval s expr)
+  then fromBool False
+  else eval s result
 #+END_SRC
 
 If everytheng else failed, we look into the evaluation context for a
@@ -338,8 +356,9 @@ sourceBlockId :: SourceBlock -> Maybe SourceBlockId
 sourceBlockId SourceBlock{ blockName = (Just name) } = Just $ NamedBlock name
 sourceBlockId block = case headerArg ":tangle" block of
     Nothing -> Nothing
+    Just (Atom "t") -> Nothing
+    Just (SExpr []) -> Nothing
     Just (Atom f) -> Just $ FileBlock f
-    Just (BoolAtom _) -> Nothing
     Just e -> error $ "unsupported tangle destination: " ++ show e
 #+END_SRC
 
