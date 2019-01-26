@@ -20,7 +20,10 @@ files that used the =cwebmac= macros.  The result is this Org-based
 set of tools.
 
 The parser accepts a subset of the complete Org syntax, and expects a
-certain structure that mimics what you would find in a =CWEB= file.
+certain structure that mimics what you would find in a =CWEB= file. It
+is a larger parser than I would like it to be, but unfortunately there
+are no Haskell Org parsers available that support all the things I
+need.
 
 * Main Sections
 
@@ -46,8 +49,8 @@ certain structure that mimics what you would find in a =CWEB= file.
 
 #+NAME: Imports
 #+BEGIN_SRC haskell
-import Control.Applicative ((<|>), (<**>), liftA2)
-import Control.Monad (void, when)
+import Control.Applicative ((<|>), (<**>))
+import Control.Monad (liftM2, void, when)
 import Control.Monad.State (State, get, modify, runState)
 import Data.Foldable (foldlM, foldrM)
 import Data.Char (isPrint, isSpace, ord)

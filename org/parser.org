@@ -56,14 +56,14 @@ important when inserting line pragmas while tangling.
 data OrgLine = OrgLine P.SourcePos String
 #+END_SRC
 
-We have to remove the trailing newline when pretty-printer, as the
+We have to remove the trailing newline when pretty-printing, as the
 decision to break a line or not is up to the pretty-printing algorithm.
 
 #+NAME: Pretty printing
 #+BEGIN_SRC haskell
 instance Pretty OrgLine where
   pretty (OrgLine p l) =
-    PP.hcat [pretty p, PP.colon, PP.text (takeWhile (/= '\n') l)]
+    PP.hcat [pretty p, PP.colon, PP.text (takeWhile (/= '\n') l), PP.char '␤']
 #+END_SRC
 
 Now to ingesting those lines. The parser we are going to use for both
@@ -85,7 +85,7 @@ The Stack package for the boostrapper is =parsec=.
 Ingesting a file is a matter of reading all of its lines, then recursively
 replacing any =#+INCLUDE= directives by the files they
 reference. Reading a file's lines can be done with the prelude's
-~readFile~ and ~lines~ functions. We have to put back the lost
+~readFile~ and ~lines~ functions, but I then have to put back the lost
 newlines to facilitate things later on.
 
 #+NAME: Parser
@@ -101,7 +101,7 @@ ingest file = do
       $ (<<Parse an ~#+INCLUDE~ directive>> :: String -> Maybe FilePath) s
 #+END_SRC
 
-We invoke a parser to check whether the line is an =#+INCLUDE= line or
+I invoke a parser to check whether the line is an =#+INCLUDE= line or
 not, taking the precaution to set the position of the string to parse
 to the correct position in the input file, so that errors are
 properly reported.
@@ -119,7 +119,7 @@ fromEither . P.parse
 #+END_SRC
 
 The ~fromEither~ function above returns a successful result, or errors out
-by pretty-printing the error. We will use it a handful of times more later.
+by pretty-printing the error. I will use it a handful of times more later.
 
 #+NAME: Common =CCWEB= code
 #+BEGIN_SRC haskell
@@ -127,7 +127,7 @@ fromEither :: Pretty a => Either a b -> b
 fromEither = either (error . PP.render . pretty) id
 #+END_SRC
 
-We also used an ~anyChar~ parser above. It is similar to the one
+I also used an ~anyChar~ parser above. It is similar to the one
 defined by =Parsec=, except it does not cross line boundaries.
 
 #+NAME: Parser
@@ -136,7 +136,7 @@ anyChar :: (P.Stream s m Char) => P.ParsecT s u m Char
 anyChar = P.noneOf "\n\r"
 #+END_SRC
 
-Now that we have an Org file ingested into a list of ~OrgLine~, we
+Now that I have an Org file ingested into a list of ~OrgLine~, I
 need to make those available for the next parser as a ~P.Stream~.
 
 #+NAME: Parser
@@ -148,10 +148,10 @@ instance Monad m => P.Stream OrgLine m Char where
     return $ Just (x, OrgLine (P.updatePosChar p x) xs)
 #+END_SRC
 
-The next piece of the ~P.Stream~ puzzle is to support lists of
-~OrgLine~. We can't simply declare ~[OrgLine]~ an instance of ~Stream~
+The other piece of the ~P.Stream~ puzzle is to support lists of
+~OrgLine~. I can't simply declare ~[OrgLine]~ an instance of ~Stream~
 because that would conflict with then instance =Parsec= declares for
-tokens. We get around it by wrapping the list in a new type.
+tokens. I get around it by wrapping the list in a new type.
 
 #+NAME: Parser
 #+BEGIN_SRC haskell
@@ -186,9 +186,9 @@ instance Monad m => P.Stream OrgLines m Char where
 
 ** Basic Parsers
 
-When we talk about whitespace, we will be talking about
-/horizontal whitespace/. The =Parsec= parsers don't have those, so we
-implement them ourselves.
+When I talk about whitespace, I will be talking about
+/horizontal whitespace/. The =Parsec= parsers don't have those, so I
+implement them below.
 
 #+NAME: Parser
 #+BEGIN_SRC haskell
@@ -202,8 +202,8 @@ spaces1 :: Parser String
 spaces1 = P.many1 space
 #+END_SRC
 
-There will be a few places where we will need to parse a /symbol/,
-which we fuzzily consider to be a ``variable name.'' The ~=~
+There will be a few places where I will need to parse a /symbol/,
+which I fuzzily consider to be a ``variable name.'' The ~=~
 character, for example, is a valid Lisp symbol name, but not a valid
 Org property name.
 
@@ -217,10 +217,10 @@ symbol = P.many1 symbolChar
 #+END_SRC
 
 In order to make use of the positions reported by an ~OrgLines~
-stream, we need to re-define a few basic =Parsec= parsers. The only
+stream, I need to re-define a few basic =Parsec= parsers. The only
 meaningful change is in ~satisfy~. The standard implementation updates
 the position according to the character just consumed, meaning the
-parser always ``thinks'' it is in the same file. Our implementation
+parser always ``thinks'' it is in the same file. My implementation
 will use the location stored in the current ~OrgLine~, each of which
 may come from a different file.
 
@@ -236,9 +236,9 @@ satisfy f = P.tokenPrim
             (\c -> if f c then Just c else Nothing)
 #+END_SRC
 
-The only parser we /really/ need to re-define for positioning purposes
+The only parser I /really/ need to re-define for positioning purposes
 is ~endOfLine~, because it is only when changing lines that positions
-can switch from one source file to another in an ~OrgLine~. We will do
+can switch from one source file to another in an ~OrgLine~. I will do
 it by replicating the relevant =Parsec= definitions, substituting our
 ~satisfy~ in the only place where it shows up.
 
@@ -287,7 +287,7 @@ failWhen = succeedWhen . not
 
 The ~manyTill~ parser parses something until something else
 appears, then returns the list of things parsed. The only difference
-between ours and =Parsec='s is that ours does not consume the end
+between ours and =Parsec='s is that mine does not consume the end
 parser's result.
 
 #+NAME: Parser
@@ -296,7 +296,7 @@ manyTill :: Parser a -> Parser end -> Parser [a]
 manyTill p = P.manyTill p . P.lookAhead
 
 many1Till :: Parser a -> Parser end -> Parser [a]
-many1Till p = liftA2 (:) p . manyTill p
+many1Till p = liftM2 (:) p . manyTill p
 #+END_SRC
 
 #+NAME: Parser
@@ -318,19 +318,12 @@ where the intricacies of the meaning of the components is so that one
 can write things like ``and/or and this/that'' without implying that
 ``or and this'' should be in italics.
 
-The first and last characters of a markup text must match what the Org
-reference calls a ``border.'' I allow double-quotes.
+I chose to ignore the =BORDER= rules, as I want to be able to use any
+character inside a markup.
 
-#+NAME: Parse a markup border character
-#+BEGIN_SRC haskell
-satisfy (\c -> not (isSpace c) && notElem c ",'")
-:: Parser Char
-#+END_SRC
-
-The character just before the marker, the ``pre'' character,
-must be one of the ones below, or be the beginning of a line. Since
-we can't test for the latter by consuming a character, the parser
-returns a ~Maybe Char~.
+The character just before the marker, =PRE=, must be one of the ones
+below, or be the beginning of a line. Since I can't test for the
+latter by consuming a character, the parser returns a ~Maybe Char~.
 
 #+NAME: Parse the character before a markup
 #+BEGIN_SRC haskell
@@ -350,40 +343,34 @@ the situation is the same with =eof= replaced for the beggining of a line.
 :: Parser (Maybe Char)
 #+END_SRC
 
-A markup starts with a sequence =PRE MARKER BORDER=, which is parsed
+A markup starts with a sequence =PRE MARKER=, which is parsed
 below. The parser returns =PRE=, in case it is not the beginning of
 the line, the =MARKER= found, and places the parsing stream ready to
-parse =BORDER=.
+parse the markup body.
 
 #+NAME: Parse the start of markup
 #+BEGIN_SRC haskell
-P.try $ do
-  p <- (<<Parse the character before a markup>>)
-  m <- (P.oneOf "*~/+=")
-  _ <- P.lookAhead (<<Parse a markup border character>>)
-  return (p,m)
+P.try $ liftM2 (,)
+  (<<Parse the character before a markup>>)
+  (P.oneOf "*~/+=")
 :: Parser (Maybe Char, Char)
 #+END_SRC
 
-A markup ends with =BORDER MARKER END=. The Org rules mentioned below
-seem to imply that the border that starts a markup can not be the one
-that ends it, but I support that case (and so does Org). That is
-parsed below a parser that returns =BORDER= and places the stream
+A markup ends with =MARKER END=. That is
+parsed below a parser that returns nothing, and places the stream
 right before the first thing after the markup.
 
 #+NAME: Parse the end of markup ~marker~
 #+BEGIN_SRC haskell
 P.try $
-  (<<Parse a markup border character>>)
-  <* P.char marker
+  void (P.char marker)
   <* P.lookAhead (<<Parse the first character after a markup>>)
-:: Parser Char
+:: Parser ()
 #+END_SRC
 
 I am now finally ready to parse a marked up text. After parsing the
-markup start, I read all the characters until the last =BORDER=
-character with the ~manyTill~ parser. I then parse =BORDER= with
-~anyChar~ and combine the two to get the markup body. The rest is
+markup start, I read all the characters until the end of
+the markup with the ~manyTill~ parser. The rest is
 simple, except for some markups that accept nested markups, where the
 process is repeated by parsing ~Text~ again from the body with
 ~textFromString~.
@@ -391,12 +378,14 @@ process is repeated by parsing ~Text~ again from the body with
 #+NAME: Parse a markup text element
 #+BEGIN_SRC haskell
 P.try $ do
-  (pre, marker) <- (>>= parserTrace "Text:Markup:/Start") (<<Parse the start of markup>>)
+  (pre, marker) <-
+    (>>= parserTrace "Text:Markup:/Start")
+    (<<Parse the start of markup>>)
   p <- P.getPosition
-  b1 <- (>>= parserTrace "Text:Markup:/BodyA") (manyTill anyChar (<<Parse the end of markup ~marker~>>))
-  b2 <- (>>= parserTrace "Text:Markup:/BodyB") ((:[]) <$> anyChar)
+  body <-
+    (>>= parserTrace "Text:Markup:/BodyA")
+    (manyTill anyChar (<<Parse the end of markup ~marker~>>))
   _ <- char marker
-  let body = b1 ++ b2
   return . (pre,) $ case marker of
     '*' -> Bold $ textFromString p body
     '~' -> InlineCode body
@@ -407,77 +396,22 @@ P.try $ do
 :: Parser (Maybe Char, TextElement)
 #+END_SRC
 
-#+NAME: Parse inline $\TeX$
-#+BEGIN_SRC haskell
-(DisplayMath <$> (P.try (P.string "$$") *> P.manyTill P.anyChar (P.try $ P.string "$$")))
-<|>
-(InlineMath <$> (P.char '$' *> P.manyTill P.anyChar (P.char '$')))
-:: Parser TextElement
-#+END_SRC
-
-#+NAME: Parse a hyperlink
-#+BEGIN_SRC haskell
-P.try $ do
-  url <- P.string "[[" *> many1Till anyChar (P.string "][" <|> P.string "]]")
-  txt <- P.string "][" <|> P.string "]]" >>= \case
-    "]]" -> return $ Text [Verbatim url]
-    _    -> textTill (P.string "]]")
-  let hyp = HyperLink url txt
-  _ <- parserTrace "Text:/HyperLink" hyp
-  textAcc $ ([], hyp : upx Nothing plain text)
-#+END_SRC
-
-** Text
-
-With markup parsing in place, we can finally tackle parsing text. We
-will do it using a fold that keeps track of the plain text parsed
-since the last markup, and the current text line.
+The ~textFromString~ function, in turn, is a simple call to
+~runParser~.
 
 #+NAME: Parser
 #+BEGIN_SRC haskell
-upx :: Maybe Char -> String -> [TextElement] -> [TextElement]
-upx Nothing  []    elts = elts
-upx Nothing  plain elts = Plain (reverse plain) : elts
-upx (Just c) plain elts = Plain (reverse $ c : plain) : elts
+textFromString :: P.SourcePos -> String -> Text
+textFromString p s = fromEither $ P.runParser
+    (parse :: Parser Text)
+    initialParserState
+    (P.sourceName p)
+    (OrgLines [OrgLine p s])
 #+END_SRC
 
-#+NAME: Parser
-#+BEGIN_SRC haskell
-textAcc :: (String, [TextElement]) -> Parser (String, [TextElement])
-textAcc (plain, text) =
-  <<Stop parsing text at the end of a line>>
-  <|> (<<Stop parsing text when something else starts>>)
-  <|> (<<Parse a hyperlink>>)
-  <|>
-  (do
-      markup <- P.try (<<Parse inline $\TeX$>>) >>= parserTrace "Text/TeX"
-      textAcc $ ([], markup : upx Nothing plain text)
-  )
-  <|>
-  (do
-      (c, markup) <- (<<Parse a markup text element>>) >>= parserTrace "Text:/Markup"
-      textAcc $ ([], markup : upx c plain text)
-  )
-  <|> (anyChar >>= textAcc . (,text) . (:plain))
-#+END_SRC
-
-#+NAME: Stop parsing text at the end of a line
-#+BEGIN_SRC haskell
-(P.eof *> parserTrace "Text:/EOF" ([], upx Nothing plain text))
-<|> (endOfLine *> parserTrace "Text:/EOL" ([], upx Nothing plain text))
-#+END_SRC
-
-#+NAME: Stop parsing text when something else starts
-#+BEGIN_SRC haskell
-do
-  beginningOfLine
-  P.lookAhead . P.choice $ map P.try
-    [ void (spaces *> P.string "#+NAME")
-    , void (spaces *> P.string "#+BEGIN_SRC")
-    , void (parse :: Parser Headline)
-    ]
-  parserTrace "Text:/Break" ([], upx Nothing plain text)
-#+END_SRC
+I might as well introduce a related parser, ~textTill~, which collects
+all characters until a given parser succeeds, then parses what was
+collected as ~Text~.
 
 #+NAME: Parser
 #+BEGIN_SRC haskell
@@ -489,24 +423,114 @@ textTill end = do
   parserTrace "/TextTill" $ textFromString p t
 #+END_SRC
 
+That out of the way, I parse other text elements. The next one is
+inlined $\hbox{\TeX}$ math formulas. For both of them, I'm currently
+assuming there's no other reason to have dollar signs in Org text. I
+will change this when I find one.
+
+#+NAME: Parse inline $\TeX$
+#+BEGIN_SRC haskell
+(DisplayMath <$>
+  (P.try (P.string "$$")
+   *> P.manyTill P.anyChar (P.try $ P.string "$$")))
+<|>
+(InlineMath <$>
+  (P.char '$'
+   *> P.manyTill P.anyChar (P.char '$')))
+:: Parser TextElement
+#+END_SRC
+
+Hyperlinks have two variations, =[[URL]]= and =[[URL][TEXT]]=. The second one
+supports embedded markup, using the ~textTill~ parser defined above.
+
+#+NAME: Parse a hyperlink
+#+BEGIN_SRC haskell
+do
+  url <- P.string "[[" *> many1Till anyChar (P.string "][" <|> P.string "]]")
+  txt <- P.string "][" <|> P.string "]]" >>= \case
+    "]]" -> return $ Text [Verbatim url]
+    _    -> textTill (P.string "]]")
+  return $ HyperLink url txt
+#+END_SRC
+
+** Text
+
+With markup parsing in place, we can finally tackle parsing text. I
+will do it accumulating one character at a time with the
+occasional markup along the way. The accumulator is then a pair,
+=(String, [TextElement])=, where the string is the currently
+accumulated plain text, and the list is all the text elements that
+came before it. With this accumulation done in a ~scanText~ function, the
+text parser is given below.
+
 #+NAME: Parser
 #+BEGIN_SRC haskell
 instance Parse Text where
   parse = do
     _ <- parserTrace "Text" ()
-    ret <- reverse . snd <$> textAcc ([], [])
+    ret <- reverse . snd <$> scanText ([], [])
     failWhen (null ret) P.<?> "empty text"
-    _ <- parserDebug "/Text" ret
+    parserTrace "/Text" $ Text ret
+#+END_SRC
 
-    return $ Text ret
+The basic operation on the accumulation pair is to add a plain text
+character and/or a marked up element to it. When both are added at the
+same time, the character is added first. All accumulations are done in
+reverse order, so when I group the plain text I have to reverse the
+string.
+
+#+NAME: Update text accumulator pair ~acc~
+#+BEGIN_SRC haskell
+\(newChar, newMarkup) -> case (newChar, fst acc, newMarkup) of
+  (Nothing, [], Nothing) -> ([], snd acc)
+  (Nothing, cs, Nothing) -> ([], Plain (reverse cs) : snd acc)
+  (Just c,  cs, Nothing) -> ([], Plain (reverse $ c : cs) : snd acc)
+  (Nothing, [], Just m)  -> ([], m : snd acc)
+  (Nothing, cs, Just m)  -> ([], m : Plain (reverse cs) : snd acc)
+  (Just c,  cs, Just m)  -> ([], m : Plain (reverse $ c : cs) : snd acc)
 #+END_SRC
 
 #+NAME: Parser
 #+BEGIN_SRC haskell
-textFromString :: P.SourcePos -> String -> Text
-textFromString p s = fromEither $ P.runParser
-    (parse :: Parser Text)
-    initialParserState
-    (P.sourceName p)
-    (OrgLines [OrgLine p s])
+scanText :: (String, [TextElement]) -> Parser (String, [TextElement])
+scanText acc@(plain, text) =
+  <<Stop parsing text at the end of a line>>
+  <|> (<<Stop parsing text when something else starts>>)
+  <|>
+  (do
+      markup <- P.try (<<Parse a hyperlink>>) >>= parserTrace "Text/Link"
+      scanText $ (<<Update text accumulator pair ~acc~>>) (Nothing, Just markup)
+  )
+  <|>
+  (do
+      markup <- P.try (<<Parse inline $\TeX$>>) >>= parserTrace "Text/TeX"
+      scanText $ (<<Update text accumulator pair ~acc~>>) (Nothing, Just markup)
+  )
+  <|>
+  (do
+      (maybePre, markup) <- (<<Parse a markup text element>>) >>= parserTrace "Text:/Markup"
+      scanText $ (<<Update text accumulator pair ~acc~>>) (maybePre, Just markup)
+  )
+  <|> (anyChar >>= scanText . (,text) . (:plain))
 #+END_SRC
+
+#+NAME: Stop parsing text at the end of a line
+#+BEGIN_SRC haskell
+(P.eof *> parserTrace "Text:/EOF"
+  ((<<Update text accumulator pair ~acc~>>) (Nothing, Nothing)))
+<|> (endOfLine *> parserTrace "Text:/EOL"
+  ((<<Update text accumulator pair ~acc~>>) (Nothing, Nothing)))
+#+END_SRC
+
+#+NAME: Stop parsing text when something else starts
+#+BEGIN_SRC haskell
+do
+  beginningOfLine
+  P.lookAhead . P.choice $ map P.try
+    [ void (spaces *> P.string "#+NAME")
+    , void (spaces *> P.string "#+BEGIN_SRC")
+    , void (parse :: Parser Headline)
+    ]
+  parserTrace "Text:/Break" $ (<<Update text accumulator pair ~acc~>>) (Nothing, Nothing)
+#+END_SRC
+
