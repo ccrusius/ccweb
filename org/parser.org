@@ -631,5 +631,5 @@ P.try (P.string "yes" *> P.lookAhead P.space *> return (Atom "t"))
 
 #+NAME: Parse an ~Atom~
 #+BEGIN_SRC haskell
-Atom <$> (enclosed '"' <|> symbol)
+Atom <$> (enclosed '"' <|> (char '\'' *> symbol) <|> symbol)
 #+END_SRC
