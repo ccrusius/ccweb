@@ -338,34 +338,3 @@ instance Parse Section where
       }
 #+END_SRC
 
-** Keywords
-
-#+NAME: Parser
-#+BEGIN_SRC haskell
-instance Parse Keyword where
-  parse = propertyKeyword <|> titleKeyword <|> authorKeyword <|> otherKeyword
-    where
-      authorKeyword = do
-        keywordStart "#+AUTHOR:"
-        AuthorKeyword <$> parse
-      propertyKeyword = do
-        PropertyKeyword <$> <<Parse a =#+PROPERTY= line>>
-      titleKeyword = do
-        keywordStart "#+TITLE:"
-        TitleKeyword <$> parse
-      otherKeyword = do
-        _ <- P.try $ P.string "#+"
-        t <- P.many anyChar
-        _ <- endOfLine
-        return $ OtherKeyword t
-      keywordStart h = void $ P.try (P.string h *> spaces)
-#+END_SRC
-
-#+NAME: Parser
-#+BEGIN_SRC haskell
-headerProperties :: [Keyword] -> Properties
-headerProperties = foldl acc mempty where
-    acc a (PropertyKeyword p) = Map.union p a
-    acc a _ = a
-#+END_SRC
-

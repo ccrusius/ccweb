@@ -54,6 +54,17 @@ instance Pretty Keyword where
   pretty (OtherKeyword a) = PP.hsep [PP.text "Other:", pretty a]
 #+END_SRC
 
+The =PROPERTY= keyword can be specified multiple times, so I provide a
+function that computes the combined ~Properties~ from those keywords.
+
+#+NAME: Document data model
+#+BEGIN_SRC haskell
+headerProperties :: [Keyword] -> Properties
+headerProperties = foldl acc mempty where
+    acc a (PropertyKeyword p) = Map.union p a
+    acc a _ = a
+#+END_SRC
+
 ** Sections
 
 Sections are the main object. Just as in =WEB=, sections consist

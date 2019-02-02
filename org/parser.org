@@ -385,6 +385,131 @@ import qualified System.Info as Sys
 import qualified Control.Exception as E
 #+END_SRC
 
+** Keywords
+
+The /keywords/ give Org information about the whole document. Parsing
+is a simple affair, except for the =PROPERTY= one, which I will deal
+with separatedly.
+ones I
+
+#+NAME: Parser
+#+BEGIN_SRC haskell
+instance Parse Keyword where
+  parse = propertyKeyword <|> titleKeyword <|> authorKeyword <|> otherKeyword
+    where
+      propertyKeyword = do
+        PropertyKeyword <$> <<Parse a =#+PROPERTY= line>>
+      authorKeyword = do
+        keywordStart "#+AUTHOR:"
+        AuthorKeyword <$> parse
+      titleKeyword = do
+        keywordStart "#+TITLE:"
+        TitleKeyword <$> parse
+      otherKeyword = do
+        _ <- P.try $ P.string "#+"
+        t <- P.many anyChar
+        _ <- endOfLine
+        return $ OtherKeyword t
+      keywordStart h = void $ P.try (P.string h *> spaces)
+#+END_SRC
+
+** Properties
+
+Properties appear in two places: in the document header, as a
+=#+PROPERTY= line, and after section headlines in =:PROPERTIES:= drawers.
+
+#+NAME: Parser
+#+BEGIN_SRC haskell
+instance Parse Properties where
+  parse = do
+    _ <- parserTrace "Properties" ()
+    ps <- (<<Parse a =#+PROPERTY= line>>) <|> (<<Parse a =:PROPERTIES:= drawer>>)
+    _ <- parserTrace "/Properties" ()
+    return ps
+#+END_SRC
+
+A =#+PROPERTY= line specifies the property the line refers to,
+followed by a list of key-value pairs.
+
+#+NAME: Parse a =#+PROPERTY= line
+#+BEGIN_SRC haskell
+do
+  _ <- P.try (P.string "#+PROPERTY:") *> spaces
+  liftM2 Map.singleton
+    (symbol <* spaces1)
+    (<<Parse a line of property key-value pairs>>)
+#+END_SRC
+
+A =:PROPERTIES:= drawer is a sequence of lines specifying the
+property name, followed by the list of key-value pairs.
+
+#+NAME: Parse a =:PROPERTIES:= drawer
+#+BEGIN_SRC haskell
+do
+  _ <- P.try (spaces *> P.string ":PROPERTIES:" *> spaces *> endOfLine)
+  Map.fromList <$> P.manyTill
+    (liftM2 (,)
+       (spaces *> (enclosed ':' <* spaces))
+       (<<Parse a line of property key-value pairs>>))
+    (P.try (spaces *> P.string ":END:" *> spaces *> endOfLine))
+#+END_SRC
+
+A line of key-value pairs is a sequence of alternating symbols (the
+property name) and S-expressions (the value). Those pairs have an
+optional equals sign between them.
+
+#+NAME: Parse a line of property key-value pairs
+#+BEGIN_SRC haskell
+line (Map.fromList
+      <$> P.sepEndBy
+       (liftM2 (,)
+         (symbol <* (spaces1 <|> (spaces *> P.char '=' *> spaces)))
+         (parse :: Parser SExpr))
+       spaces1)
+#+END_SRC
+
+** S-Expressions
+
+S-Expression are famously easy to parse. The only tweak I need to make
+is in parsing Org boolean values, as org treats =no= as =nil=, and
+=yes= as =t=.
+
+#+NAME: Parser
+#+BEGIN_SRC haskell
+instance Parse SExpr where
+  parse = (<<Parse a parenthesized S-expression>>)
+          <|> (<<Parse a boolean property>>)
+          <|> (<<Parse an ~Atom~>>)
+#+END_SRC
+
+A recursive parse takes care of lists.
+
+#+NAME: Parse a parenthesized S-expression
+#+BEGIN_SRC haskell
+SExpr <$> ( P.try (P.char '(')
+             *> spaces
+             *> (P.sepEndBy (parse :: Parser SExpr) spaces1 <* P.char ')')
+           )
+#+END_SRC
+
+A hardcoded list of possibilities takes care of Org truth-y values.
+
+#+NAME: Parse a boolean property
+#+BEGIN_SRC haskell
+P.try (P.string "nil" *> P.lookAhead P.space *> return (SExpr []))
+<|>
+P.try (P.string "no" *> P.lookAhead P.space *> return (SExpr []))
+<|>
+P.try (P.string "yes" *> P.lookAhead P.space *> return (Atom "t"))
+#+END_SRC
+
+Finally, everything else is an atom. I am not making a distinction
+between strings and symbols at this point.
+
+#+NAME: Parse an ~Atom~
+#+BEGIN_SRC haskell
+Atom <$> (enclosed '"' <|> (char '\'' *> symbol) <|> symbol)
+#+END_SRC
 ** Markup
 
 I tried to follow the
@@ -623,100 +748,3 @@ do
   parserTrace "Text:/Break" $ (<<Update text accumulator pair ~acc~>>) (Nothing, Nothing)
 #+END_SRC
 
-** Properties
-
-Properties appear in two places: in the document header, as a
-=#+PROPERTY= line, and after section headlines in =:PROPERTIES:= drawers.
-
-#+NAME: Parser
-#+BEGIN_SRC haskell
-instance Parse Properties where
-  parse = do
-    _ <- parserTrace "Properties" ()
-    ps <- (<<Parse a =#+PROPERTY= line>>) <|> (<<Parse a =:PROPERTIES:= drawer>>)
-    _ <- parserTrace "/Properties" ()
-    return ps
-#+END_SRC
-
-A =#+PROPERTY= line specifies the property the line refers to,
-followed by a list of key-value pairs.
-
-#+NAME: Parse a =#+PROPERTY= line
-#+BEGIN_SRC haskell
-do
-  _ <- P.try (P.string "#+PROPERTY:") *> spaces
-  liftM2 Map.singleton
-    (symbol <* spaces1)
-    (<<Parse a line of property key-value pairs>>)
-#+END_SRC
-
-A =:PROPERTIES:= drawer is a sequence of lines specifying the
-property name, followed by the list of key-value pairs.
-
-#+NAME: Parse a =:PROPERTIES:= drawer
-#+BEGIN_SRC haskell
-do
-  _ <- P.try (spaces *> P.string ":PROPERTIES:" *> spaces *> endOfLine)
-  Map.fromList <$> P.manyTill
-    (liftM2 (,)
-       (spaces *> (enclosed ':' <* spaces))
-       (<<Parse a line of property key-value pairs>>))
-    (P.try (spaces *> P.string ":END:" *> spaces *> endOfLine))
-#+END_SRC
-
-A line of key-value pairs is a sequence of alternating symbols (the
-property name) and S-expressions (the value). Those pairs have an
-optional equals sign between them.
-
-#+NAME: Parse a line of property key-value pairs
-#+BEGIN_SRC haskell
-line (Map.fromList
-      <$> P.sepEndBy
-       (liftM2 (,)
-         (symbol <* (spaces1 <|> (spaces *> P.char '=' *> spaces)))
-         (parse :: Parser SExpr))
-       spaces1)
-#+END_SRC
-
-** S-Expressions
-
-S-Expression are famously easy to parse. The only tweak I need to make
-is in parsing Org boolean values, as org treats =no= as =nil=, and
-=yes= as =t=.
-
-#+NAME: Parser
-#+BEGIN_SRC haskell
-instance Parse SExpr where
-  parse = (<<Parse a parenthesized S-expression>>)
-          <|> (<<Parse a boolean property>>)
-          <|> (<<Parse an ~Atom~>>)
-#+END_SRC
-
-A recursive parse takes care of lists.
-
-#+NAME: Parse a parenthesized S-expression
-#+BEGIN_SRC haskell
-SExpr <$> ( P.try (P.char '(')
-             *> spaces
-             *> (P.sepEndBy (parse :: Parser SExpr) spaces1 <* P.char ')')
-           )
-#+END_SRC
-
-A hardcoded list of possibilities takes care of Org truth-y values.
-
-#+NAME: Parse a boolean property
-#+BEGIN_SRC haskell
-P.try (P.string "nil" *> P.lookAhead P.space *> return (SExpr []))
-<|>
-P.try (P.string "no" *> P.lookAhead P.space *> return (SExpr []))
-<|>
-P.try (P.string "yes" *> P.lookAhead P.space *> return (Atom "t"))
-#+END_SRC
-
-Finally, everything else is an atom. I am not making a distinction
-between strings and symbols at this point.
-
-#+NAME: Parse an ~Atom~
-#+BEGIN_SRC haskell
-Atom <$> (enclosed '"' <|> (char '\'' *> symbol) <|> symbol)
-#+END_SRC
