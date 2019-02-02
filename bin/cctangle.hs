@@ -797,9 +797,9 @@ instance Parse SExpr where
                                                                                  )
           <|> (
 {-# LINE 721 "org/parser.org" #-}
-               Atom <$> (enclosed '"' <|> symbol)
+               Atom <$> (enclosed '"' <|> (char '\'' *> symbol) <|> symbol)
 {-# LINE 692 "org/parser.org" #-}
-                                                 )
+                                                                           )
 {-# LINE 151 "org/scaffold.org" #-}
 newtype Stack a = Stack [a]
 
