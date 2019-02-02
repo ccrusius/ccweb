@@ -33,11 +33,6 @@ logM lvl minLvl = when (lvl >= minLvl) . putStrLn . PP.render . pretty
 import qualified Options.Applicative as O
 #+END_SRC
 
-#+NAME: stack-packages
-#+BEGIN_SRC shell
---package optparse-applicative
-#+END_SRC
-
 #+NAME: Command-line-options
 #+BEGIN_SRC haskell
 data Options = Options
@@ -46,6 +41,7 @@ data Options = Options
   , dryRun :: Bool
   , listInputFiles :: Bool
   , listOutputFiles :: Bool
+  , listMakeDeps :: Bool
   , inputFile :: String
   }
 
@@ -56,17 +52,23 @@ instance Pretty Options where
     , ("dry-run", pretty $ dryRun o)
     , ("list-input-files", pretty $ listInputFiles o)
     , ("list-output-files", pretty $ listOutputFiles o)
+    , ("list-make-deps", pretty $ listMakeDeps o)
     , ("input file", pretty $ inputFile o)
     ]
 
 userOptionParser :: O.Parser Options
-userOptionParser = Options
-  <$> (<<Parse the =-q= user flag>>)
-  <*> (<<Parse the =-v= user flag>>)
-  <*> dryRunParser
-  <*> <<The =-I= command line flag>>
-  <*> <<The =-O= command line flag>>
-  <*> (<<Parse input file name>>)
+userOptionParser =
+  O.helper
+  <*> <<The =--version= command line flag>>
+  <*> ( Options
+        <$> (<<Parse the =-q= user flag>>)
+        <*> (<<Parse the =-v= user flag>>)
+        <*> dryRunParser
+        <*> <<The =-I= command line flag>>
+        <*> <<The =-O= command line flag>>
+        <*> <<The =-M= command line flag>>
+        <*> (<<Parse input file name>>)
+      )
 #+END_SRC
 
 #+NAME: Command-line-options
@@ -129,6 +131,15 @@ O.switch
   )
 #+END_SRC
 
+#+NAME: The =-M= command line flag
+#+BEGIN_SRC haskell
+O.switch
+  ( O.short 'M'
+  <> O.long "list-make-dependencies"
+  <> O.help "If given, list the input and output files in a Makefile format."
+  )
+#+END_SRC
+
 #+NAME: Command-line-options
 #+BEGIN_SRC haskell
 dryRunParser :: O.Parser Bool
@@ -137,6 +148,20 @@ dryRunParser = O.switch
   <> O.long "dry-run"
   <> O.help "If given, do not write any files. Useful when debugging."
   )
+#+END_SRC
+
+#+NAME: The =--version= command line flag
+#+BEGIN_SRC haskell
+O.infoOption (showVersion version)
+  ( O.long "version"
+  <> O.help "Output version information and exit."
+  )
+#+END_SRC
+
+#+NAME: Imports
+#+BEGIN_SRC haskell
+import Paths_ccweb (version)
+import Data.Version (showVersion)
 #+END_SRC
 
 ** A Basic Stack
@@ -178,11 +203,6 @@ resize i (Stack xs)
 #+NAME: Imports
 #+BEGIN_SRC haskell
 import qualified Text.PrettyPrint as PP
-#+END_SRC
-
-#+NAME: stack-packages
-#+BEGIN_SRC shell
---package pretty
 #+END_SRC
 
 #+NAME: Pretty printing

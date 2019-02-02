@@ -10,7 +10,7 @@
 main :: IO ()
 main = do
   opts <- O.execParser optParser
-  logM (logLevel opts) Info $ "This is CCTANGLE"
+  logM (logLevel opts) Info $ "This is CCTANGLE " ++ showVersion version
 
   (ingested, doc) <- readOrgFile (logLevel opts) (inputFile opts)
   logM (logLevel opts) Debug $ PP.render (pretty ingested)
@@ -24,7 +24,7 @@ main = do
   mapM_ (tangleFile opts doc) outs
   logM (logLevel opts) Info $ "Done."
   where
-    optParser = O.info (userOptionParser <**> O.helper)
+    optParser = O.info userOptionParser
       ( O.fullDesc
       <> O.progDesc "Tangle the input FILE"
       <> O.header "cctangle - A literate programming tangler" )
@@ -53,11 +53,14 @@ lines, and the latter are the first element of the ~outs~ tuples.
 
 #+NAME: List =CCTANGLE= input and output files
 #+BEGIN_SRC haskell
-when (listOutputFiles opts) $ mapM_ putStrLn (map fst outs)
-when (listInputFiles opts)  $ mapM_ putStrLn (
-  nub . sort .
-  map (\(OrgLine p _) -> P.sourceName p) $ (toList ingested)
-  )
+let genFiles = map fst outs
+    inpFiles = nub . sort . map (\(OrgLine p _) -> P.sourceName p) $ (toList ingested)
+when (listOutputFiles opts) $
+  mapM_ putStrLn genFiles
+when (listInputFiles opts) $
+  mapM_ putStrLn inpFiles
+when (listMakeDeps opts) $
+  mapM_ putStrLn (map ((intercalate " " genFiles ++ ":") ++) inpFiles)
 #+END_SRC
 
 The file will be tangled by producing a sequence of code lines, which
@@ -398,11 +401,4 @@ import qualified System.Directory as D
 import qualified System.Environment as Env
 import qualified System.FilePath as F
 import qualified System.Posix.Files as F
-#+END_SRC
-
-#+NAME: stack-packages
-#+BEGIN_SRC shell
---package filepath
---package directory
---package unix
 #+END_SRC

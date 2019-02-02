@@ -8,7 +8,9 @@
 *.scn
 *.tex
 bin/cctangle
-bin/ccweave
-bootstrap/ccweave
+bin/ccweave*
+bootstrap/cctangle
+ccweb.deps
+ccweb.outs
 tests/*.tex
 work/

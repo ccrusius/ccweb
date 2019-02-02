@@ -25,6 +25,11 @@ is a larger parser than I would like it to be, but unfortunately there
 are no Haskell Org parsers available that support all the things I
 need.
 
+#+BEGIN_SRC shell :tangle no
+make bootstrap
+make
+#+END_SRC
+
 * Main Sections
 
 #+NAME: Common =CCWEB= code
@@ -38,18 +43,9 @@ need.
 <<Command-line-options>>
 #+END_SRC
 
-#+NAME: Stack-preamble
-#+BEGIN_SRC haskell :comments no
-{- stack
-  script
-  --resolver lts-12.22
-  <<stack-packages>>
--}
-#+END_SRC
-
 #+NAME: Imports
 #+BEGIN_SRC haskell
-import Control.Applicative ((<|>), (<**>))
+import Control.Applicative ((<|>))
 import Control.Monad (liftM2, void, when)
 import Control.Monad.State (State, get, modify, runState)
 import Data.Foldable (foldlM, foldrM)
@@ -71,14 +67,6 @@ import Network.HostName (getHostName)
 {-# LANGUAGE TupleSections #-}
 {-# LANGUAGE TypeFamilies #-}
 #+END_SRC
-
-#+NAME: stack-packages
-#+BEGIN_SRC shell
---package containers
---package hostname
---package mtl
-#+END_SRC
-
 
 #+INCLUDE: "org/doc.org"
 
@@ -135,11 +123,6 @@ reset = ANSI.setSGRCode [ANSI.Reset]
 #+NAME: Imports
 #+BEGIN_SRC haskell
 import qualified System.Console.ANSI as ANSI
-#+END_SRC
-
-#+NAME: stack-packages
-#+BEGIN_SRC shell
---package ansi-terminal
 #+END_SRC
 
 ** Lines of Input

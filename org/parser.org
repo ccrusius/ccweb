@@ -75,13 +75,6 @@ import qualified Text.Parsec as P
 import qualified Text.Parsec.Pos as P
 #+END_SRC
 
-The Stack package for the boostrapper is =parsec=.
-
-#+NAME: stack-packages
-#+BEGIN_SRC shell
---package parsec
-#+END_SRC
-
 Ingesting a file is a matter of reading all of its lines, then recursively
 replacing any =#+INCLUDE= directives by the files they
 reference. Reading a file's lines can be done with the prelude's

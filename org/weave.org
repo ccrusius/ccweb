@@ -6,7 +6,7 @@
 main :: IO ()
 main = do
   opts <- O.execParser optParser
-  logM (logLevel opts) Info $ "This is CCWEAVE"
+  logM (logLevel opts) Info $ "This is CCWEAVE " ++ showVersion version
 
   (ingested, doc) <- readOrgFile (logLevel opts) (inputFile opts)
   logM (logLevel opts) Debug $ PP.render (pretty ingested)
@@ -39,7 +39,7 @@ main = do
 
       logM (logLevel opts) Info $ "Done."
   where
-    optParser = O.info (userOptionParser <**> O.helper)
+    optParser = O.info userOptionParser
       ( O.fullDesc
       <> O.progDesc "Weave the input FILE"
       <> O.header "ccweave - A literate programming weaver" )
