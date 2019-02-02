@@ -67,7 +67,7 @@ order of appearance in the file), an optional headline, and
 #+BEGIN_SRC haskell
 data Section = Section
   { sectionNumber :: Int
-  , sectionHeadline :: Maybe Headline
+  , sectionHeadline :: Headline
   , documentation :: [Text]
   , sectionSourceBlock :: Maybe SourceBlock
   , sectionProps :: Properties
@@ -97,7 +97,7 @@ section starting with =***=, for example, has level 2.
 
 #+NAME: Document data model
 #+BEGIN_SRC haskell
-data Headline = Headline Int Text deriving Show
+data Headline = Headline Int Text | EmptyHeadline deriving Show
 #+END_SRC
 
 We chose to pretty-print it almost literally.
@@ -106,6 +106,7 @@ We chose to pretty-print it almost literally.
 #+BEGIN_SRC haskell
 instance Pretty Headline where
   pretty (Headline l t) = PP.hcat [PP.char '*', PP.braces (pretty l), pretty t]
+  pretty EmptyHeadline = PP.char '§'
 #+END_SRC
 
 ** Properties

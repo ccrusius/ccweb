@@ -126,6 +126,7 @@ instance Weave String where
       '#' -> return "{\\#}"
       '$' -> return "{\\$}"
       '%' -> return "{\\%}"
+      '§' -> return "{\\S}"
       c -> return [c]
     )
 #+END_SRC
@@ -173,9 +174,9 @@ instance Weave Section where
 do
   concat <$>
     case sectionHeadline s of
-      Nothing ->
+      EmptyHeadline ->
         return [ "\\M{", show (sectionNumber s), "}"]
-      Just (Headline d t) -> do
+      Headline d t -> do
         title <- weave t :: Weaver String
         return [ "\\N{", show d, "}"
                , "{", show (sectionNumber s), "}"

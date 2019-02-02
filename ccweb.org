@@ -199,17 +199,21 @@ instance Parse CodeLine where
 instance Parse Headline where
   parse = do
     _ <- parserTrace "Headline" ()
-    s <- P.try (char '*') *> P.many (char '*')
-    _ <- spaces1
-    t <- parse :: Parser Text
-    _ <- parserTrace "/Headline" ()
-    return $ Headline (length s) t
+    (char '§' *> spaces *> return EmptyHeadline)
+    <|> (do
+            s <- P.try (char '*') *> P.many (char '*')
+            _ <- spaces1
+            t <- parse :: Parser Text
+            _ <- parserTrace "/Headline" ()
+            return $ Headline (length s) t
+        )
 #+END_SRC
 
 #+NAME: Parser
 #+BEGIN_SRC haskell
 headlineLevel :: Headline -> Int
 headlineLevel (Headline x _) = x
+headlineLevel EmptyHeadline = error $ "no level for empty headline"
 #+END_SRC
 
 ** Code Blocks
@@ -283,17 +287,19 @@ instance Parse Section where
 
     skipEmptyLines
     _ <- parserTrace "Section:Maybe Headline" ()
-    h <- P.optionMaybe parse :: Parser (Maybe Headline)
+    h <- fromMaybe EmptyHeadline <$> P.optionMaybe parse :: Parser Headline
+
+    let emptyHead = case h of { EmptyHeadline -> True; _ -> False }
 
     skipEmptyLines
     _ <- parserTrace "Section:Properties" ()
-    ps <- case h of
-      Nothing -> return Map.empty
-      _ -> parse <|> return Map.empty :: Parser Properties
+    ps <- if emptyHead
+      then return Map.empty
+      else parse <|> return Map.empty :: Parser Properties
     _ <- parserDebug "Section:/Properties" ps
 
-    when (isJust h) $ do
-      stk' <- resize (1 + (headlineLevel $ fromJust h)) . propertyStack <$> P.getState
+    when (not emptyHead) $ do
+      stk' <- resize (1 + (headlineLevel h)) . propertyStack <$> P.getState
       P.updateState (\s -> s{ propertyStack = stk' })
       ps' <- Map.unionWith Map.union ps . top . propertyStack <$> P.getState
       P.updateState (\s -> s{ propertyStack = push ps' stk' })
@@ -309,14 +315,14 @@ instance Parse Section where
     skipEmptyLines
     _ <- parserTrace "Section:Maybe SourceBlock" ()
     c <- case (ts, h) of
-          (Nothing, Nothing) -> Just <$> (parse :: Parser SourceBlock)
+          (Nothing, EmptyHeadline) -> Just <$> (parse :: Parser SourceBlock)
           (_, _) -> P.optionMaybe $ parse :: Parser (Maybe SourceBlock)
 
     skipEmptyLines
 
     _ <- parserTrace "/Section" ()
 
-    succeedWhen (isJust h || isJust ts || isJust c)
+    succeedWhen ((not emptyHead) || isJust ts || isJust c)
 
     state <- P.getState
     let n = 1 + sectionCounter state
@@ -361,69 +367,5 @@ headerProperties :: [Keyword] -> Properties
 headerProperties = foldl acc mempty where
     acc a (PropertyKeyword p) = Map.union p a
     acc a _ = a
-#+END_SRC
-
-** Document
-
-#+NAME: Parser
-#+BEGIN_SRC haskell
-instance Parse Document where
-  parse = do
-    _ <- parserTrace "Document" ()
-    hs <- P.many parse :: Parser [Keyword]
-    P.updateState $ \s -> s{ propertyStack = Stack [headerProperties hs] }
-    skipEmptyLines
-    _ <- parserTrace "Document:Sections" ()
-    ss <- P.many . P.try $ parse :: Parser [Section]
-    _ <- parserTrace "Document:/Sections" ()
-    skipEmptyLines *> P.eof
-    parserTrace "/Document" $ Document { keywords = hs , sections = ss }
-#+END_SRC
-
-#+NAME: Parser
-#+BEGIN_SRC haskell
-readOrgFile :: LogLevel -> FilePath -> IO (OrgLines, Document)
-readOrgFile lvl fp = do
-  ingested <- fromList <$> ingest fp :: IO OrgLines
-  <<Build the evaluation context ~ctx~>>
-  let doc = fromEither $ P.runParser
-        (parse :: Parser Document)
-        initialParserState{ evalContext = ctx, parserLogLevel = lvl }
-        fp
-        ingested
-  return (ingested, doc)
-#+END_SRC
-
-#+NAME: Build the evaluation context ~ctx~
-#+BEGIN_SRC haskell
-let styp = ( Atom "system-type"
-           , Atom $ case Sys.os of
-                      "linux" -> "gnu/linux"
-                      "mingw32" -> "windows-nt"
-                      o -> o
-           )
-    atomize k = fmap ((Atom k,) . Atom)
-hnam <- (SExpr [Atom "system-name"],) . Atom <$> getHostName
-pfam <- atomize "dmi/product-family"  <$> (<<Read DMI property>>) "product_family"
-pnam <- atomize "dmi/product-name"    <$> (<<Read DMI property>>) "product_name"
-pver <- atomize "dmi/product-version" <$> (<<Read DMI property>>) "product_version"
-
-let ctx = Map.fromList $ styp : hnam : catMaybes [pfam, pnam, pver]
-#+END_SRC
-
-#+NAME: Read DMI property
-#+BEGIN_SRC haskell
-\p -> either (\_ -> Nothing) (Just . reverse . dropWhile isSpace . reverse)
-     <$> (E.try (readFile $ "/sys/devices/virtual/dmi/id" F.</> p)
-          :: IO (Either E.IOException String))
-#+END_SRC
-
-The =Sys.os= variable requires the import of =System.Info=, and =try=
-is from =System.IO.Error=
-
-#+NAME: Imports
-#+BEGIN_SRC haskell
-import qualified System.Info as Sys
-import qualified Control.Exception as E
 #+END_SRC
 

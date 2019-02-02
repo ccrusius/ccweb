@@ -307,6 +307,84 @@ eitherMany1 end p =
   (Right <$> many1Till p (void endOfLine <|> void end))
 #+END_SRC
 
+** Document
+
+With the basic things out of the way, let's start by parsing a
+document. It consists of a prelude of keywords followed by an
+arbitrary number of sections. The parser follows naturally.
+
+#+NAME: Parser
+#+BEGIN_SRC haskell
+instance Parse Document where
+  parse = do
+    _ <- parserTrace "Document" ()
+    hs <- P.many parse :: Parser [Keyword]
+    P.updateState $ \s -> s{ propertyStack = Stack [headerProperties hs] }
+    skipEmptyLines
+    _ <- parserTrace "Document:Sections" ()
+    ss <- P.many . P.try $ parse :: Parser [Section]
+    _ <- parserTrace "Document:/Sections" ()
+    skipEmptyLines *> P.eof
+    parserTrace "/Document" $ Document { keywords = hs , sections = ss }
+#+END_SRC
+
+In order to invoke this parser, I need to first have an ~OrgLines~
+instance, and a properly initialized parser state. All of that logic
+is put together in the ~readOrgFile~ function below.
+
+#+NAME: Parser
+#+BEGIN_SRC haskell
+readOrgFile :: LogLevel -> FilePath -> IO (OrgLines, Document)
+readOrgFile lvl fp = do
+  ingested <- fromList <$> ingest fp :: IO OrgLines
+  <<Build the evaluation context ~ctx~>>
+  let doc = fromEither $ P.runParser
+        (parse :: Parser Document)
+        initialParserState{ evalContext = ctx, parserLogLevel = lvl }
+        fp
+        ingested
+  return (ingested, doc)
+#+END_SRC
+
+The evaluation context contains things Emacs knows about, such as
+~system-type~, and things it doesn't but that I provide anyway, such
+as DMI information.
+
+#+NAME: Build the evaluation context ~ctx~
+#+BEGIN_SRC haskell
+let styp = ( Atom "system-type"
+           , Atom $ case Sys.os of
+                      "linux" -> "gnu/linux"
+                      "mingw32" -> "windows-nt"
+                      o -> o
+           )
+    atomize k = fmap ((Atom k,) . Atom)
+hnam <- (SExpr [Atom "system-name"],) . Atom <$> getHostName
+pfam <- atomize "dmi/product-family"  <$> (<<Read DMI property>>) "product_family"
+pnam <- atomize "dmi/product-name"    <$> (<<Read DMI property>>) "product_name"
+pver <- atomize "dmi/product-version" <$> (<<Read DMI property>>) "product_version"
+
+let ctx = Map.fromList $ styp : hnam : catMaybes [pfam, pnam, pver]
+#+END_SRC
+
+In a Linux system, the DMI properties are located in a =sys= sub-directory.
+
+#+NAME: Read DMI property
+#+BEGIN_SRC haskell
+\p -> either (\_ -> Nothing) (Just . reverse . dropWhile isSpace . reverse)
+     <$> (E.try (readFile $ "/sys/devices/virtual/dmi/id" F.</> p)
+          :: IO (Either E.IOException String))
+#+END_SRC
+
+The =Sys.os= variable requires the import of =System.Info=, and =try=
+is from =System.IO.Error=
+
+#+NAME: Imports
+#+BEGIN_SRC haskell
+import qualified System.Info as Sys
+import qualified Control.Exception as E
+#+END_SRC
+
 ** Markup
 
 I tried to follow the
@@ -315,13 +393,14 @@ parsing markup somewhat closely, but there will be some
 differences. The rules state that markup is of the form
 $$\hbox{{\tt PRE MARKER BORDER BODY BORDER MARKER POST},}$$
 where the intricacies of the meaning of the components is so that one
-can write things like ``and/or and this/that'' without implying that
+can write things like
+$$\hbox{\tt and/or and this/that}$$
+without implying that
 ``or and this'' should be in italics.
-
 I chose to ignore the =BORDER= rules, as I want to be able to use any
 character inside a markup.
 
-The character just before the marker, =PRE=, must be one of the ones
+§ The character just before the marker, =PRE=, must be one of the ones
 below, or be the beginning of a line. Since I can't test for the
 latter by consuming a character, the parser returns a ~Maybe Char~.
 
@@ -544,8 +623,10 @@ do
   parserTrace "Text:/Break" $ (<<Update text accumulator pair ~acc~>>) (Nothing, Nothing)
 #+END_SRC
 
-
 ** Properties
+
+Properties appear in two places: in the document header, as a
+=#+PROPERTY= line, and after section headlines in =:PROPERTIES:= drawers.
 
 #+NAME: Parser
 #+BEGIN_SRC haskell
@@ -557,68 +638,71 @@ instance Parse Properties where
     return ps
 #+END_SRC
 
+A =#+PROPERTY= line specifies the property the line refers to,
+followed by a list of key-value pairs.
+
 #+NAME: Parse a =#+PROPERTY= line
 #+BEGIN_SRC haskell
 do
   _ <- P.try (P.string "#+PROPERTY:") *> spaces
-  p <- symbol <* spaces1
-  kvs <- <<Parse a line of property key-value pairs>>
-  return $ Map.singleton p kvs
+  liftM2 Map.singleton
+    (symbol <* spaces1)
+    (<<Parse a line of property key-value pairs>>)
 #+END_SRC
 
-#+NAME: Parse a line of property key-value pairs
-#+BEGIN_SRC haskell
-line (Map.fromList
-      <$> P.sepEndBy
-       (<<Parse a single key-value property pair>>)
-       spaces1)
-#+END_SRC
-
-#+NAME: Parse a single key-value property pair
-#+BEGIN_SRC haskell
-do
-  k <- symbol <* (spaces1 <|> (spaces *> P.char '=' *> spaces))
-  v <- parse :: Parser SExpr
-  return (k, v)
-#+END_SRC
+A =:PROPERTIES:= drawer is a sequence of lines specifying the
+property name, followed by the list of key-value pairs.
 
 #+NAME: Parse a =:PROPERTIES:= drawer
 #+BEGIN_SRC haskell
 do
   _ <- P.try (spaces *> P.string ":PROPERTIES:" *> spaces *> endOfLine)
   Map.fromList <$> P.manyTill
-    (<<Parse a =:PROPERTIES:= drawer line>>)
+    (liftM2 (,)
+       (spaces *> (enclosed ':' <* spaces))
+       (<<Parse a line of property key-value pairs>>))
     (P.try (spaces *> P.string ":END:" *> spaces *> endOfLine))
 #+END_SRC
 
-#+NAME: Parse a =:PROPERTIES:= drawer line
+A line of key-value pairs is a sequence of alternating symbols (the
+property name) and S-expressions (the value). Those pairs have an
+optional equals sign between them.
+
+#+NAME: Parse a line of property key-value pairs
 #+BEGIN_SRC haskell
-do
-  p <- spaces *> (enclosed ':' <* spaces)
-  kvs <- <<Parse a line of property key-value pairs>>
-  return (p, kvs)
+line (Map.fromList
+      <$> P.sepEndBy
+       (liftM2 (,)
+         (symbol <* (spaces1 <|> (spaces *> P.char '=' *> spaces)))
+         (parse :: Parser SExpr))
+       spaces1)
 #+END_SRC
 
 ** S-Expressions
 
+S-Expression are famously easy to parse. The only tweak I need to make
+is in parsing Org boolean values, as org treats =no= as =nil=, and
+=yes= as =t=.
+
 #+NAME: Parser
 #+BEGIN_SRC haskell
 instance Parse SExpr where
-  parse =
-    (<<Parse a parenthesized S-expression>>)
-    <|>
-    P.try (<<Parse a boolean property>>)
-    <|>
-    (<<Parse an ~Atom~>>)
+  parse = (<<Parse a parenthesized S-expression>>)
+          <|> (<<Parse a boolean property>>)
+          <|> (<<Parse an ~Atom~>>)
 #+END_SRC
+
+A recursive parse takes care of lists.
 
 #+NAME: Parse a parenthesized S-expression
 #+BEGIN_SRC haskell
 SExpr <$> ( P.try (P.char '(')
              *> spaces
-             *> (P.sepEndBy parse spaces1 <* P.char ')')
+             *> (P.sepEndBy (parse :: Parser SExpr) spaces1 <* P.char ')')
            )
 #+END_SRC
+
+A hardcoded list of possibilities takes care of Org truth-y values.
 
 #+NAME: Parse a boolean property
 #+BEGIN_SRC haskell
@@ -628,6 +712,9 @@ P.try (P.string "no" *> P.lookAhead P.space *> return (SExpr []))
 <|>
 P.try (P.string "yes" *> P.lookAhead P.space *> return (Atom "t"))
 #+END_SRC
+
+Finally, everything else is an atom. I am not making a distinction
+between strings and symbols at this point.
 
 #+NAME: Parse an ~Atom~
 #+BEGIN_SRC haskell
