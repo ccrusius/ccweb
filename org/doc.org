@@ -252,6 +252,20 @@ eval s (SExpr [Atom "string-suffix-p", suffix, expr]) =
     (e1, e2) -> SExpr [Atom "string-suffix-p", e1, e2]
 #+END_SRC
 
+The boolean logic functions.
+
+#+NAME: Evaluate an s-expression
+#+BEGIN_SRC haskell
+eval s (SExpr [Atom "not", expr]) =
+  fromBool . not . toBool . eval s $ expr
+
+eval s (SExpr (Atom "and" : exprs)) =
+  fromBool . and . map (toBool . eval s) $ exprs
+
+eval s (SExpr (Atom "or" : exprs)) =
+  fromBool . or . map (toBool . eval s) $ exprs
+#+END_SRC
+
 Now the conditionals.
 
 #+NAME: Evaluate an s-expression

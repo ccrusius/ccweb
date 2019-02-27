@@ -110,32 +110,43 @@ instance Eval SExpr where
       (Atom s', Atom str) -> fromBool $ isSuffixOf s' str
       (e1, e2) -> SExpr [Atom "string-suffix-p", e1, e2]
 {-# LINE 259 "org/doc.org" #-}
+  eval s (SExpr [Atom "not", expr]) =
+    fromBool . not . toBool . eval s $ expr
+  
+{-# LINE 262 "org/doc.org" #-}
+  eval s (SExpr (Atom "and" : exprs)) =
+    fromBool . and . map (toBool . eval s) $ exprs
+  
+{-# LINE 265 "org/doc.org" #-}
+  eval s (SExpr (Atom "or" : exprs)) =
+    fromBool . or . map (toBool . eval s) $ exprs
+{-# LINE 273 "org/doc.org" #-}
   eval s (SExpr [Atom "when", expr, result]) =
     if toBool (eval s expr)
     then eval s result
     else fromBool False
   
-{-# LINE 264 "org/doc.org" #-}
+{-# LINE 278 "org/doc.org" #-}
   eval s (SExpr [Atom "unless", expr, result]) =
     if toBool (eval s expr)
     then fromBool False
     else eval s result
-{-# LINE 275 "org/doc.org" #-}
+{-# LINE 289 "org/doc.org" #-}
   eval s expr = Map.findWithDefault expr expr (evalContext s)
-{-# LINE 288 "org/doc.org" #-}
+{-# LINE 302 "org/doc.org" #-}
 class HeaderArgs a where
   headerArgs :: a -> Property
   headerArg :: String -> a -> Maybe SExpr
   headerArg k a = Map.lookup k $ headerArgs a
 
-{-# LINE 293 "org/doc.org" #-}
+{-# LINE 307 "org/doc.org" #-}
 instance HeaderArgs Properties where
   headerArgs = Map.findWithDefault Map.empty "header-args"
 
-{-# LINE 296 "org/doc.org" #-}
+{-# LINE 310 "org/doc.org" #-}
 instance HeaderArgs Section where
   headerArgs = headerArgs . sectionDerivedProperties
-{-# LINE 312 "org/doc.org" #-}
+{-# LINE 326 "org/doc.org" #-}
 data SourceBlock = SourceBlock
   { blockName :: Maybe Text
   , blockLanguage :: String
@@ -144,19 +155,19 @@ data SourceBlock = SourceBlock
   , blockProperties :: Property
   , blockDerivedProperties :: Property
   }
-{-# LINE 341 "org/doc.org" #-}
+{-# LINE 355 "org/doc.org" #-}
 instance HeaderArgs SourceBlock where
   headerArgs = blockDerivedProperties
-{-# LINE 352 "org/doc.org" #-}
+{-# LINE 366 "org/doc.org" #-}
 data SourceBlockId = FileBlock FilePath | NamedBlock Text deriving Eq
 
-{-# LINE 354 "org/doc.org" #-}
+{-# LINE 368 "org/doc.org" #-}
 instance Ord SourceBlockId where
   (<=) (FileBlock p1) (FileBlock p2) = p1 <= p2
   (<=) (NamedBlock p1) (NamedBlock p2) = p1 <= p2
   (<=) (FileBlock _) (NamedBlock _) = False
   (<=) _ _ = True
-{-# LINE 367 "org/doc.org" #-}
+{-# LINE 381 "org/doc.org" #-}
 sourceBlockId :: SourceBlock -> Maybe SourceBlockId
 sourceBlockId SourceBlock{ blockName = (Just name) } = Just $ NamedBlock name
 sourceBlockId block = case headerArg ":tangle" block of
@@ -165,14 +176,14 @@ sourceBlockId block = case headerArg ":tangle" block of
     Just (SExpr []) -> Nothing
     Just (Atom f) -> Just $ FileBlock f
     Just e -> error $ "unsupported tangle destination: " ++ show e
-{-# LINE 382 "org/doc.org" #-}
+{-# LINE 396 "org/doc.org" #-}
 newtype CodeLine = CodeLine [CodeElement]
 data CodeElement = Literal P.SourcePos String
                  | SectionReference P.SourcePos Text
-{-# LINE 411 "org/doc.org" #-}
+{-# LINE 425 "org/doc.org" #-}
 data Text = Text [TextElement] deriving (Eq, Ord, Show)
 
-{-# LINE 413 "org/doc.org" #-}
+{-# LINE 427 "org/doc.org" #-}
 data TextElement =
   Bold Text
   | HyperLink String Text
@@ -184,12 +195,12 @@ data TextElement =
   | DisplayMath String
   | Verbatim String
   deriving (Eq, Ord, Show)
-{-# LINE 456 "org/doc.org" #-}
+{-# LINE 470 "org/doc.org" #-}
 trim :: Text -> Text
 trim (Text (Plain []:ys))       = trim $ Text ys
 trim (Text (Plain (' ':xs):ys)) = trim $ Text (Plain xs:ys)
 trim  t                         = t
-{-# LINE 466 "org/doc.org" #-}
+{-# LINE 480 "org/doc.org" #-}
 type DocumentPartition = Map.Map SourceBlockId [Section]
 {-# LINE 27 "org/doc.org" #-}
 instance Pretty Document where
@@ -227,7 +238,7 @@ instance Show SExpr where
 {-# LINE 182 "org/doc.org" #-}
 instance Pretty SExpr where
   pretty = PP.text . show
-{-# LINE 326 "org/doc.org" #-}
+{-# LINE 340 "org/doc.org" #-}
 instance Pretty SourceBlock where
   pretty = prettyStruct "SourceBlock"
              [ ("name", pretty . blockName)
@@ -237,17 +248,17 @@ instance Pretty SourceBlock where
              , ("location", pretty . blockLocation)
              , ("lines", pretty . blockLines)
              ]
-{-# LINE 393 "org/doc.org" #-}
+{-# LINE 407 "org/doc.org" #-}
 instance Pretty CodeLine where
   pretty (CodeLine xs) = pretty xs
 
-{-# LINE 396 "org/doc.org" #-}
+{-# LINE 410 "org/doc.org" #-}
 instance Pretty CodeElement where
   pretty (Literal p s) =
     PP.parens $ PP.hcat [pretty p, PP.colon, pretty s]
   pretty (SectionReference p t) =
     PP.hcat [pretty p, PP.colon, PP.char '〈', pretty t, PP.char '〉']
-{-# LINE 432 "org/doc.org" #-}
+{-# LINE 446 "org/doc.org" #-}
 instance Pretty TextElement where
   pretty = \case
     (Bold a)          -> pretty' "bold" a
@@ -1190,7 +1201,7 @@ main = do
                . (mapMaybe (\(i,ss) -> case i of; (FileBlock f) -> Just (f,ss); _ -> Nothing) . toList
                   :: DocumentPartition -> [(FilePath, [Section])])
                . (
-{-# LINE 471 "org/doc.org" #-}
+{-# LINE 485 "org/doc.org" #-}
                   ((Map.fromList . map (\bs -> (fst (head bs), map snd bs)))
                        :: [[(SourceBlockId, Section)]] -> DocumentPartition)
                     . (groupWith fst
