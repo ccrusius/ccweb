@@ -10,8 +10,7 @@ inotify:
 bootstrap:
 	@mkdir -p bootstrap
 	@rm -f bootstrap/cctangle
-	stack build --trace ccweb:cctangle
-	cp `stack exec -- which cctangle` $@
+	stack install ccweb --local-bin-path $@
 
 .PHONY: bootstrap
 TANGLED_FILES :=
@@ -32,8 +31,7 @@ ${TANGLED_FILES}:
 bin/%tangle bin/%weave: bin/cctangle.hs bin/ccweave.hs
 	@rm -f $@
 	stack build -j2 --trace
-	cp `stack exec -- which ccweave` bin/ccweave
-	cp `stack exec -- which cctangle` bin/cctangle
+	stack install ccweb --local-bin-path bin
 DIFF := git --no-pager diff --no-index
 test_cctangle: bin/cctangle
 	@rm -f tests/out/tangle*

@@ -10,6 +10,7 @@
 bin/cctangle
 bin/ccweave
 bootstrap/cctangle
+bootstrap/ccweave
 ccweb.deps
 ccweb.outs
 tests/*.tex
