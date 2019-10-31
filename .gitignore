@@ -8,7 +8,7 @@
 *.scn
 *.tex
 bin/cctangle
-bin/ccweave*
+bin/ccweave
 bootstrap/cctangle
 ccweb.deps
 ccweb.outs
