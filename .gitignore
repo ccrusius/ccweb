@@ -2,6 +2,7 @@
 *.out
 *.pdf
 *.swp
+*.lock
 *.log
 *.toc
 *.idx
