@@ -44,6 +44,7 @@ test_cctangle: bin/cctangle
 	${DIFF} tests/ref/tangle003.hs tests/out/tangle003.hs
 	${DIFF} tests/ref/tangle004.hs tests/out/tangle004.hs
 	${DIFF} tests/ref/tangle005.hs tests/out/tangle005.hs
+	${DIFF} tests/ref/tangle006.cf tests/out/tangle006.cf
 	@rm -f tests/out/tangle*
 
 test_ccweave: bin/ccweave

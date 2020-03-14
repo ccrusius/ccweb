@@ -105,6 +105,14 @@ show (LinePragma "c" pos) = unwords
 show (LinePragma "c++" pos) = show (LinePragma "c" pos)
 #+END_SRC
 
+Generic configuration files do not really have a comment standard, but the =#=
+character is common enough for my purposes.
+
+#+NAME: Line pragmas for known languages
+#+BEGIN_SRC haskell
+show (LinePragma "conf" pos) = show (LinePragma "c" pos)
+#+END_SRC
+
 User-defined line pragmas have a =>>= prefix, then a string
 to use as a line comment prefix.
 

@@ -45,7 +45,7 @@ str :: String
 str = "Hello, world!"
 #+END_SRC
 
-* 004: Line number pragmas
+* 004: Line number pragmas and sections
 :PROPERTIES:
 :header-args: :tangle "tests/out/tangle004.hs" :comments yes
 :END:
@@ -104,4 +104,10 @@ putStrLn "Hello, world!"
 #+NAME: 005: With line numbers
 #+BEGIN_SRC haskell
 main :: IO ()
+#+END_SRC
+
+* 006: Line number pragmas for specific languages
+
+#+BEGIN_SRC conf :tangle "tests/out/tangle006.cf" :comments yes
+Should have a "#" pragma above
 #+END_SRC
