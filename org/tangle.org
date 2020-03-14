@@ -105,6 +105,15 @@ show (LinePragma "c" pos) = unwords
 show (LinePragma "c++" pos) = show (LinePragma "c" pos)
 #+END_SRC
 
+User-defined line pragmas have a =>>= prefix, then a string
+to use as a line comment prefix.
+
+#+NAME: Line pragmas for known languages
+#+BEGIN_SRC haskell
+show (LinePragma ('>':'>':pre) pos) =
+  pre ++ P.sourceName pos ++ ":" ++ show (P.sourceLine pos) ++ "\n"
+#+END_SRC
+
 The tangling process may generate more ~LinePragma~ lines than
 necessary. The resulting file will be correct, but a bit too ugly. The
 following will remove most of the redundant lines, and the ones that
@@ -190,10 +199,19 @@ tangleSourceBlock block = do
 maybeAddLinePragma :: [Line] -> P.SourcePos -> SourceBlock -> Tangler [Line]
 maybeAddLinePragma ls pos block = do
   lang <- pragmaLanguage <$> get
-  let pragma = LinePragma lang pos
-  return $ case (toBool <$> headerArg ":comments" block, show pragma) of
-    (Just True, (_:_)) -> pragma : ls
-    _ -> ls
+  return $ case headerArg ":comments" block of
+    Nothing -> ls
+    Just comments ->
+      if not (toBool comments) then ls
+      else
+        let pragma = case comments of
+              Atom "t" -> LinePragma lang pos
+              Atom "yes" -> LinePragma lang pos
+              Atom prefix -> LinePragma ('>':'>':prefix) pos
+              _ -> LinePragma lang pos
+        in case (show pragma) of
+             (_:_) -> pragma:ls
+             _ -> ls
 #+END_SRC
 
 Tangling code lines is a lot more complicated. The simple case is

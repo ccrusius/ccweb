@@ -62,12 +62,33 @@ main = do
 #+BEGIN_SRC haskell
 str :: String
 str = "Hello, world!"
+<<Custom comments>>
 #+END_SRC
 
 #+NAME: Put string again
 #+BEGIN_SRC c++
 // The line pragma should still be a Haskell one
 std::cerr << "This is not C++" << std::endl;
+#+END_SRC
+
+#+NAME: Custom comments
+#+BEGIN_SRC haskell :comments "--!! "
+-- Line pragma avove should start with --!!
+#+END_SRC
+
+#+NAME: Custom comments
+#+BEGIN_SRC haskell :comments no
+-- There should be no line pragma above
+#+END_SRC
+
+#+NAME: Custom comments
+#+BEGIN_SRC haskell :comments yes
+-- There should be a line pragma above
+#+END_SRC
+
+#+NAME: Custom comments
+#+BEGIN_SRC haskell :comments t
+-- There should be a line pragma above
 #+END_SRC
 
 * 005: Mixed line numbers on and off
