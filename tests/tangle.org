@@ -45,12 +45,12 @@ str :: String
 str = "Hello, world!"
 #+END_SRC
 
-* 004: Line number pragmas and sections
+* 004: Line number pragmas
 :PROPERTIES:
-:header-args: :tangle "tests/out/tangle004.hs" :comments yes
+:header-args: :tangle "tests/out/tangle004.hs"
 :END:
 
-#+BEGIN_SRC haskell
+#+BEGIN_SRC haskell :comments yes
 main :: IO ()
 main = do
   putStrLn str
@@ -59,10 +59,12 @@ main = do
   putStrLn str
 #+END_SRC
 
-#+BEGIN_SRC haskell
+#+BEGIN_SRC haskell :comments yes
 str :: String
 str = "Hello, world!"
-<<Custom comments>>
+<<Inherited custom comments>>
+<<Inherited standard comments>>
+<<Inherited no comments>>
 #+END_SRC
 
 #+NAME: Put string again
@@ -71,24 +73,26 @@ str = "Hello, world!"
 std::cerr << "This is not C++" << std::endl;
 #+END_SRC
 
-#+NAME: Custom comments
+#+NAME: Inherited custom comments
 #+BEGIN_SRC haskell :comments "--!! "
--- Line pragma avove should start with --!!
+-- Line pragma above should start with --!!
+<<Sub-section with inherited comment style>>
 #+END_SRC
 
-#+NAME: Custom comments
+#+NAME: Sub-section with inherited comment style
+#+BEGIN_SRC haskell
+-- And the pragma above should start with --!! too.
+#+END_SRC
+
+#+NAME: Inherited standard comments
+#+BEGIN_SRC haskell
+-- There should be a regular line pragma above
+#+END_SRC
+
+#+NAME: Inherited no comments
 #+BEGIN_SRC haskell :comments no
--- There should be no line pragma above
-#+END_SRC
-
-#+NAME: Custom comments
-#+BEGIN_SRC haskell :comments yes
--- There should be a line pragma above
-#+END_SRC
-
-#+NAME: Custom comments
-#+BEGIN_SRC haskell :comments t
--- There should be a line pragma above
+-- There should be no regular line pragma above pointing
+-- to this source block.
 #+END_SRC
 
 * 005: Mixed line numbers on and off

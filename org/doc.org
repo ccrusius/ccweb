@@ -311,7 +311,6 @@ instance HeaderArgs Section where
   headerArgs = headerArgs . sectionDerivedProperties
 #+END_SRC
 
-
 ** Source Blocks
 
 Source blocks, defined in an Org file via the =#+BEGIN_SRC=
@@ -354,6 +353,19 @@ The source block properties are those for =header-arg= directly.
 #+BEGIN_SRC haskell
 instance HeaderArgs SourceBlock where
   headerArgs = blockDerivedProperties
+#+END_SRC
+
+There are situations when we want the properties that the block
+inherits while tangling.
+
+#+NAME: Document data model
+#+BEGIN_SRC haskell
+inheritedProperty :: String -> Stack SourceBlock -> Maybe SExpr
+inheritedProperty _ (Stack []) = Nothing
+inheritedProperty arg stack =
+  case Map.lookup arg (blockProperties $ top stack) of
+    Nothing -> inheritedProperty arg (pop stack)
+    result -> result
 #+END_SRC
 
 Source blocks that are tangled can be uniquely identified from their

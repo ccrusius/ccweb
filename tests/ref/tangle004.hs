@@ -2,12 +2,12 @@
 main :: IO ()
 main = do
   putStrLn str
-{-# LINE 70 "tests/tangle.org" #-}
+{-# LINE 72 "tests/tangle.org" #-}
   // The line pragma should still be a Haskell one
   std::cerr << "This is not C++" << std::endl;
 {-# LINE 58 "tests/tangle.org" #-}
   putStrLn "(" >> 
-{-# LINE 70 "tests/tangle.org" #-}
+{-# LINE 72 "tests/tangle.org" #-}
                   // The line pragma should still be a Haskell one
                   std::cerr << "This is not C++" << std::endl;
 {-# LINE 58 "tests/tangle.org" #-}
@@ -16,11 +16,13 @@ main = do
 {-# LINE 63 "tests/tangle.org" #-}
 str :: String
 str = "Hello, world!"
---!! tests/tangle.org:76
--- Line pragma avove should start with --!!
--- There should be no line pragma above
-{-# LINE 86 "tests/tangle.org" #-}
--- There should be a line pragma above
-{-# LINE 91 "tests/tangle.org" #-}
--- There should be a line pragma above
-{-# LINE 65 "tests/tangle.org" #-}
+--!! tests/tangle.org:78
+-- Line pragma above should start with --!!
+--!! tests/tangle.org:84
+-- And the pragma above should start with --!! too.
+{-# LINE 89 "tests/tangle.org" #-}
+-- There should be a regular line pragma above
+{-# LINE 67 "tests/tangle.org" #-}
+-- There should be no regular line pragma above pointing
+-- to this source block.
+{-# LINE 67 "tests/tangle.org" #-}

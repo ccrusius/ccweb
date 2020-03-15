@@ -130,13 +130,17 @@ remain are not too distasteful.
 #+NAME: Remove redundant line pragmas
 #+BEGIN_SRC haskell
 foldr (\x xs ->
-         let redundant (p1,n,p2) =
+         let redundant (LinePragma l1 p1, n, LinePragma l2 p2) =
                P.sourceName p1 == P.sourceName p2
+               && l1 == l2
                && P.sourceLine p1 + n == P.sourceLine p2
+             redundant (_,_,_) = False
          in case (x:xs) of
               (LinePragma _ _ : LinePragma _ _ : _) -> xs
-              (LinePragma _ p1 : l1 : LinePragma _ p2 : xs') ->
-                if redundant (p1,1,p2); then x : l1 : xs'; else (x:xs)
+              (p1:l:p2:xs') ->
+                if redundant (p1,1,p2)
+                then (x:l:xs')
+                else (x:xs)
               _ -> (x:xs))
       []
 #+END_SRC
@@ -173,9 +177,6 @@ monad, for which I define a few state access and modification functions.
 #+BEGIN_SRC haskell
 type Tangler a = State TangleState a
 
-getTopBlock :: Tangler SourceBlock
-getTopBlock = top . blocks <$> get
-
 getIndent :: Tangler Indent
 getIndent = indent <$> get
 
@@ -198,16 +199,18 @@ tangleSourceBlock :: SourceBlock -> Tangler [Line]
 tangleSourceBlock block = do
   modify (\s -> s{ blocks = push block (blocks s) })
   ls <- concat <$> mapM tangleCodeLine (blockLines block)
+  ls' <- maybeAddLinePragma ls (blockLocation block)
   modify (\s -> s{ blocks = pop (blocks s) })
-  maybeAddLinePragma ls (blockLocation block) block
+  return ls'
 #+END_SRC
 
 #+NAME: Tangler
 #+BEGIN_SRC haskell
-maybeAddLinePragma :: [Line] -> P.SourcePos -> SourceBlock -> Tangler [Line]
-maybeAddLinePragma ls pos block = do
+maybeAddLinePragma :: [Line] -> P.SourcePos -> Tangler [Line]
+maybeAddLinePragma ls pos = do
+  stack <- blocks <$> get
   lang <- pragmaLanguage <$> get
-  return $ case headerArg ":comments" block of
+  return $ case inheritedProperty ":comments" stack of
     Nothing -> ls
     Just comments ->
       if not (toBool comments) then ls
@@ -262,7 +265,7 @@ tangleCodeLine (CodeLine elements) =
     initialIndent <- getIndent
     ls <- removeLeadingEmptyLine . <<Tangle all ~element~s>>
     modify (\s -> s{ indent = initialIndent })
-    getTopBlock >>= maybeAddLinePragma ls ((<<Get position of code element>>) $ head elements)
+    maybeAddLinePragma ls ((<<Get position of code element>>) $ head elements)
       where
         removeLeadingEmptyLine :: [Line] -> [Line]
         removeLeadingEmptyLine a@(CodeText l:p@(LinePragma _ _):ls)
@@ -321,7 +324,7 @@ update the current indentation.
 (_, _, Literal pos s) -> do
   i <- getIndent
   addIndentFrom s
-  getTopBlock >>= maybeAddLinePragma (CodeText (i ++ s) : acc) pos
+  maybeAddLinePragma (CodeText (i ++ s) : acc) pos
 #+END_SRC
 
 Now for the last and rather involved case: tangling a section
@@ -351,7 +354,7 @@ part. The basic logic is as follows:
               CodeText lst = head . snd $ breakCodeText reverseRefLines
           setIndentFrom lst
           return $ reverseRefLines ++ acc
-      getTopBlock >>= maybeAddLinePragma acc' pos
+      maybeAddLinePragma acc' pos
     _ -> error $ "empty section reference: " ++ show name
 #+END_SRC
 

@@ -23,7 +23,7 @@ import qualified Text.Parsec.Pos as P
 {-# LINE 377 "org/parser.org" #-}
 import qualified System.Info as Sys
 import qualified Control.Exception as E
-{-# LINE 426 "org/tangle.org" #-}
+{-# LINE 429 "org/tangle.org" #-}
 import qualified System.Directory as D
 import qualified System.Environment as Env
 import qualified System.FilePath as F
@@ -146,7 +146,7 @@ instance HeaderArgs Properties where
 {-# LINE 310 "org/doc.org" #-}
 instance HeaderArgs Section where
   headerArgs = headerArgs . sectionDerivedProperties
-{-# LINE 326 "org/doc.org" #-}
+{-# LINE 325 "org/doc.org" #-}
 data SourceBlock = SourceBlock
   { blockName :: Maybe Text
   , blockLanguage :: String
@@ -155,19 +155,26 @@ data SourceBlock = SourceBlock
   , blockProperties :: Property
   , blockDerivedProperties :: Property
   }
-{-# LINE 355 "org/doc.org" #-}
+{-# LINE 354 "org/doc.org" #-}
 instance HeaderArgs SourceBlock where
   headerArgs = blockDerivedProperties
-{-# LINE 366 "org/doc.org" #-}
+{-# LINE 363 "org/doc.org" #-}
+inheritedProperty :: String -> Stack SourceBlock -> Maybe SExpr
+inheritedProperty _ (Stack []) = Nothing
+inheritedProperty arg stack =
+  case Map.lookup arg (blockProperties $ top stack) of
+    Nothing -> inheritedProperty arg (pop stack)
+    result -> result
+{-# LINE 378 "org/doc.org" #-}
 data SourceBlockId = FileBlock FilePath | NamedBlock Text deriving Eq
 
-{-# LINE 368 "org/doc.org" #-}
+{-# LINE 380 "org/doc.org" #-}
 instance Ord SourceBlockId where
   (<=) (FileBlock p1) (FileBlock p2) = p1 <= p2
   (<=) (NamedBlock p1) (NamedBlock p2) = p1 <= p2
   (<=) (FileBlock _) (NamedBlock _) = False
   (<=) _ _ = True
-{-# LINE 381 "org/doc.org" #-}
+{-# LINE 393 "org/doc.org" #-}
 sourceBlockId :: SourceBlock -> Maybe SourceBlockId
 sourceBlockId SourceBlock{ blockName = (Just name) } = Just $ NamedBlock name
 sourceBlockId block = case headerArg ":tangle" block of
@@ -176,14 +183,14 @@ sourceBlockId block = case headerArg ":tangle" block of
     Just (SExpr []) -> Nothing
     Just (Atom f) -> Just $ FileBlock f
     Just e -> error $ "unsupported tangle destination: " ++ show e
-{-# LINE 396 "org/doc.org" #-}
+{-# LINE 408 "org/doc.org" #-}
 newtype CodeLine = CodeLine [CodeElement]
 data CodeElement = Literal P.SourcePos String
                  | SectionReference P.SourcePos Text
-{-# LINE 425 "org/doc.org" #-}
+{-# LINE 437 "org/doc.org" #-}
 data Text = Text [TextElement] deriving (Eq, Ord, Show)
 
-{-# LINE 427 "org/doc.org" #-}
+{-# LINE 439 "org/doc.org" #-}
 data TextElement =
   Bold Text
   | HyperLink String Text
@@ -195,12 +202,12 @@ data TextElement =
   | DisplayMath String
   | Verbatim String
   deriving (Eq, Ord, Show)
-{-# LINE 470 "org/doc.org" #-}
+{-# LINE 482 "org/doc.org" #-}
 trim :: Text -> Text
 trim (Text (Plain []:ys))       = trim $ Text ys
 trim (Text (Plain (' ':xs):ys)) = trim $ Text (Plain xs:ys)
 trim  t                         = t
-{-# LINE 480 "org/doc.org" #-}
+{-# LINE 492 "org/doc.org" #-}
 type DocumentPartition = Map.Map SourceBlockId [Section]
 {-# LINE 27 "org/doc.org" #-}
 instance Pretty Document where
@@ -238,7 +245,7 @@ instance Show SExpr where
 {-# LINE 182 "org/doc.org" #-}
 instance Pretty SExpr where
   pretty = PP.text . show
-{-# LINE 340 "org/doc.org" #-}
+{-# LINE 339 "org/doc.org" #-}
 instance Pretty SourceBlock where
   pretty = prettyStruct "SourceBlock"
              [ ("name", pretty . blockName)
@@ -248,17 +255,17 @@ instance Pretty SourceBlock where
              , ("location", pretty . blockLocation)
              , ("lines", pretty . blockLines)
              ]
-{-# LINE 407 "org/doc.org" #-}
+{-# LINE 419 "org/doc.org" #-}
 instance Pretty CodeLine where
   pretty (CodeLine xs) = pretty xs
 
-{-# LINE 410 "org/doc.org" #-}
+{-# LINE 422 "org/doc.org" #-}
 instance Pretty CodeElement where
   pretty (Literal p s) =
     PP.parens $ PP.hcat [pretty p, PP.colon, pretty s]
   pretty (SectionReference p t) =
     PP.hcat [pretty p, PP.colon, PP.char '〈', pretty t, PP.char '〉']
-{-# LINE 446 "org/doc.org" #-}
+{-# LINE 458 "org/doc.org" #-}
 instance Pretty TextElement where
   pretty = \case
     (Bold a)          -> pretty' "bold" a
@@ -1201,7 +1208,7 @@ main = do
                . (mapMaybe (\(i,ss) -> case i of; (FileBlock f) -> Just (f,ss); _ -> Nothing) . toList
                   :: DocumentPartition -> [(FilePath, [Section])])
                . (
-{-# LINE 485 "org/doc.org" #-}
+{-# LINE 497 "org/doc.org" #-}
                   ((Map.fromList . map (\bs -> (fst (head bs), map snd bs)))
                        :: [[(SourceBlockId, Section)]] -> DocumentPartition)
                     . (groupWith fst
@@ -1259,47 +1266,45 @@ instance Show Line where
     pre ++ P.sourceName pos ++ ":" ++ show (P.sourceLine pos) ++ "\n"
 {-# LINE 84 "org/tangle.org" #-}
   show (LinePragma _ _) = []
-{-# LINE 150 "org/tangle.org" #-}
+{-# LINE 154 "org/tangle.org" #-}
 type Indent = String
-{-# LINE 161 "org/tangle.org" #-}
+{-# LINE 165 "org/tangle.org" #-}
 data TangleState = TangleState
   { document :: Document
   , indent :: Indent
   , blocks :: Stack SourceBlock
   , pragmaLanguage :: String
   }
-{-# LINE 174 "org/tangle.org" #-}
+{-# LINE 178 "org/tangle.org" #-}
 type Tangler a = State TangleState a
 
-{-# LINE 176 "org/tangle.org" #-}
-getTopBlock :: Tangler SourceBlock
-getTopBlock = top . blocks <$> get
-
-{-# LINE 179 "org/tangle.org" #-}
+{-# LINE 180 "org/tangle.org" #-}
 getIndent :: Tangler Indent
 getIndent = indent <$> get
 
-{-# LINE 182 "org/tangle.org" #-}
+{-# LINE 183 "org/tangle.org" #-}
 setIndentFrom :: String -> Tangler ()
 setIndentFrom str = modify
   (\s -> s{ indent = replicate (length str) ' ' })
 
-{-# LINE 186 "org/tangle.org" #-}
+{-# LINE 187 "org/tangle.org" #-}
 addIndentFrom :: String -> Tangler ()
 addIndentFrom str = modify
   (\s -> s{ indent = indent s ++ replicate (length str) ' ' })
-{-# LINE 197 "org/tangle.org" #-}
+{-# LINE 198 "org/tangle.org" #-}
 tangleSourceBlock :: SourceBlock -> Tangler [Line]
 tangleSourceBlock block = do
   modify (\s -> s{ blocks = push block (blocks s) })
   ls <- concat <$> mapM tangleCodeLine (blockLines block)
+  ls' <- maybeAddLinePragma ls (blockLocation block)
   modify (\s -> s{ blocks = pop (blocks s) })
-  maybeAddLinePragma ls (blockLocation block) block
-{-# LINE 207 "org/tangle.org" #-}
-maybeAddLinePragma :: [Line] -> P.SourcePos -> SourceBlock -> Tangler [Line]
-maybeAddLinePragma ls pos block = do
+  return ls'
+{-# LINE 209 "org/tangle.org" #-}
+maybeAddLinePragma :: [Line] -> P.SourcePos -> Tangler [Line]
+maybeAddLinePragma ls pos = do
+  stack <- blocks <$> get
   lang <- pragmaLanguage <$> get
-  return $ case headerArg ":comments" block of
+  return $ case inheritedProperty ":comments" stack of
     Nothing -> ls
     Just comments ->
       if not (toBool comments) then ls
@@ -1312,37 +1317,37 @@ maybeAddLinePragma ls pos block = do
         in case (show pragma) of
              (_:_) -> pragma:ls
              _ -> ls
-{-# LINE 231 "org/tangle.org" #-}
+{-# LINE 234 "org/tangle.org" #-}
 tangleCodeLine :: CodeLine -> Tangler [Line]
 tangleCodeLine (CodeLine []) = (:[]) . CodeText <$> getIndent
-{-# LINE 260 "org/tangle.org" #-}
+{-# LINE 263 "org/tangle.org" #-}
 tangleCodeLine (CodeLine elements) =
   do
     initialIndent <- getIndent
     ls <- removeLeadingEmptyLine . 
-{-# LINE 253 "org/tangle.org" #-}
+{-# LINE 256 "org/tangle.org" #-}
                                    reverse <$> foldlM
                                      (
-{-# LINE 296 "org/tangle.org" #-}
+{-# LINE 299 "org/tangle.org" #-}
                                       \acc element -> do
                                         let (accPragmas, accRest) = breakCodeText acc
                                         case (accPragmas, accRest, element) of
-{-# LINE 309 "org/tangle.org" #-}
+{-# LINE 312 "org/tangle.org" #-}
                                           ([], (CodeText l:ls), Literal _ s) -> do
                                             addIndentFrom s
                                             return $ CodeText (l ++ s) : ls
-{-# LINE 321 "org/tangle.org" #-}
+{-# LINE 324 "org/tangle.org" #-}
                                           (_, _, Literal pos s) -> do
                                             i <- getIndent
                                             addIndentFrom s
-                                            getTopBlock >>= maybeAddLinePragma (CodeText (i ++ s) : acc) pos
-{-# LINE 340 "org/tangle.org" #-}
+                                            maybeAddLinePragma (CodeText (i ++ s) : acc) pos
+{-# LINE 343 "org/tangle.org" #-}
                                           (_, (CodeText l:ls), SectionReference pos name) -> do
                                             refLines <- 
-{-# LINE 360 "org/tangle.org" #-}
+{-# LINE 363 "org/tangle.org" #-}
                                                         do
                                                           bs <- 
-{-# LINE 368 "org/tangle.org" #-}
+{-# LINE 371 "org/tangle.org" #-}
                                                                 filter (\b -> case (blockName b) of
                                                                                Nothing -> False
                                                                                Just t -> t == name)
@@ -1350,22 +1355,22 @@ tangleCodeLine (CodeLine elements) =
                                                                   . sections
                                                                   . document
                                                                   <$> get
-{-# LINE 361 "org/tangle.org" #-}
+{-# LINE 364 "org/tangle.org" #-}
                                                                           :: Tangler [SourceBlock]
                                                           when (null bs) (error $ "source block not defined anywhere: " ++ show name)
                                                           concat <$> mapM tangleSourceBlock bs :: Tangler [Line]
-{-# LINE 342 "org/tangle.org" #-}
+{-# LINE 345 "org/tangle.org" #-}
                                             case breakCodeText refLines of
                                               (refPragmas, (CodeText first : rest)) -> do
                                                 acc' <- case (refPragmas, accPragmas) of
                                                   ([], []) -> do
                                                     unindented <- 
-{-# LINE 379 "org/tangle.org" #-}
+{-# LINE 382 "org/tangle.org" #-}
                                                                   (\str -> do
                                                                      i <- getIndent
                                                                      return $ if isPrefixOf i str; then drop (length i) str; else str
                                                                   )
-{-# LINE 346 "org/tangle.org" #-}
+{-# LINE 349 "org/tangle.org" #-}
                                                                     first
                                                     addIndentFrom unindented
                                                     return $ reverse rest ++ (CodeText(l ++ unindented) : ls)
@@ -1374,32 +1379,32 @@ tangleCodeLine (CodeLine elements) =
                                                         CodeText lst = head . snd $ breakCodeText reverseRefLines
                                                     setIndentFrom lst
                                                     return $ reverseRefLines ++ acc
-                                                getTopBlock >>= maybeAddLinePragma acc' pos
+                                                maybeAddLinePragma acc' pos
                                               _ -> error $ "empty section reference: " ++ show name
-{-# LINE 300 "org/tangle.org" #-}
+{-# LINE 303 "org/tangle.org" #-}
                                           _ -> error $ "unreachable element tangling case"
-{-# LINE 254 "org/tangle.org" #-}
+{-# LINE 257 "org/tangle.org" #-}
                                                                                           )
                                      [CodeText initialIndent] elements
-{-# LINE 264 "org/tangle.org" #-}
+{-# LINE 267 "org/tangle.org" #-}
     modify (\s -> s{ indent = initialIndent })
-    getTopBlock >>= maybeAddLinePragma ls ((
-{-# LINE 276 "org/tangle.org" #-}
-                                            \case
-                                              (Literal p _) -> p
-                                              (SectionReference p _) -> p
-{-# LINE 265 "org/tangle.org" #-}
-                                                                         ) $ head elements)
+    maybeAddLinePragma ls ((
+{-# LINE 279 "org/tangle.org" #-}
+                            \case
+                              (Literal p _) -> p
+                              (SectionReference p _) -> p
+{-# LINE 268 "org/tangle.org" #-}
+                                                         ) $ head elements)
       where
         removeLeadingEmptyLine :: [Line] -> [Line]
         removeLeadingEmptyLine a@(CodeText l:p@(LinePragma _ _):ls)
           | all isSpace l = p:ls
           | otherwise = a
         removeLeadingEmptyLine a = a
-{-# LINE 286 "org/tangle.org" #-}
+{-# LINE 289 "org/tangle.org" #-}
 breakCodeText :: [Line] -> ([Line],[Line])
 breakCodeText = break (\case { (CodeText _) -> True; _ -> False })
-{-# LINE 390 "org/tangle.org" #-}
+{-# LINE 393 "org/tangle.org" #-}
 tangleFile :: Options -> Document -> (FilePath, [SourceBlock]) -> IO ()
 tangleFile opts _ (fp, []) =
   logM (logLevel opts) Warning $ "Not writing empty output file (" ++ fp ++ ")"
@@ -1416,16 +1421,20 @@ tangleFile opts doc (fp, bs) = do
       contents = concatMap show $ 
 {-# LINE 132 "org/tangle.org" #-}
                                   foldr (\x xs ->
-                                           let redundant (p1,n,p2) =
+                                           let redundant (LinePragma l1 p1, n, LinePragma l2 p2) =
                                                  P.sourceName p1 == P.sourceName p2
+                                                 && l1 == l2
                                                  && P.sourceLine p1 + n == P.sourceLine p2
+                                               redundant (_,_,_) = False
                                            in case (x:xs) of
                                                 (LinePragma _ _ : LinePragma _ _ : _) -> xs
-                                                (LinePragma _ p1 : l1 : LinePragma _ p2 : xs') ->
-                                                  if redundant (p1,1,p2); then x : l1 : xs'; else (x:xs)
+                                                (p1:l:p2:xs') ->
+                                                  if redundant (p1,1,p2)
+                                                  then (x:l:xs')
+                                                  else (x:xs)
                                                 _ -> (x:xs))
                                         []
-{-# LINE 403 "org/tangle.org" #-}
+{-# LINE 406 "org/tangle.org" #-}
                                            ls
   logM (logLevel opts) Info $ "Writing one output file (" ++ fp ++ ")..."
   if dryRun opts
@@ -1434,11 +1443,11 @@ tangleFile opts doc (fp, bs) = do
       let dir = F.takeDirectory fp
       when (mkDir && dir /= ".") $ D.createDirectoryIfMissing True dir
 
-{-# LINE 411 "org/tangle.org" #-}
+{-# LINE 414 "org/tangle.org" #-}
       F.fileExist fp >>= (`when` F.removeLink fp)
       writeFile fp contents
 
-{-# LINE 414 "org/tangle.org" #-}
+{-# LINE 417 "org/tangle.org" #-}
       case headerArg ":tangle-mode" block of
         Nothing -> return ()
         Just (IntAtom mode) -> F.setFileMode fp $ fromIntegral mode
