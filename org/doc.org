@@ -362,6 +362,7 @@ inherits while tangling.
 #+BEGIN_SRC haskell
 inheritedProperty :: String -> Stack SourceBlock -> Maybe SExpr
 inheritedProperty _ (Stack []) = Nothing
+inheritedProperty arg (Stack [x]) = headerArg arg x
 inheritedProperty arg stack =
   case Map.lookup arg (blockProperties $ top stack) of
     Nothing -> inheritedProperty arg (pop stack)

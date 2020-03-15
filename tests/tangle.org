@@ -115,3 +115,12 @@ main :: IO ()
 #+BEGIN_SRC conf :tangle "tests/out/tangle006.cf" :comments yes
 Should have a "#" pragma above
 #+END_SRC
+
+* 007: Comments inherited from properties drawer
+:PROPERTIES:
+:header-args: :tangle "tests/out/tangle007.hs" :comments yes
+:END:
+
+#+BEGIN_SRC haskell
+-- There should be a line pragma.
+#+END_SRC

@@ -161,20 +161,21 @@ instance HeaderArgs SourceBlock where
 {-# LINE 363 "org/doc.org" #-}
 inheritedProperty :: String -> Stack SourceBlock -> Maybe SExpr
 inheritedProperty _ (Stack []) = Nothing
+inheritedProperty arg (Stack [x]) = headerArg arg x
 inheritedProperty arg stack =
   case Map.lookup arg (blockProperties $ top stack) of
     Nothing -> inheritedProperty arg (pop stack)
     result -> result
-{-# LINE 378 "org/doc.org" #-}
+{-# LINE 379 "org/doc.org" #-}
 data SourceBlockId = FileBlock FilePath | NamedBlock Text deriving Eq
 
-{-# LINE 380 "org/doc.org" #-}
+{-# LINE 381 "org/doc.org" #-}
 instance Ord SourceBlockId where
   (<=) (FileBlock p1) (FileBlock p2) = p1 <= p2
   (<=) (NamedBlock p1) (NamedBlock p2) = p1 <= p2
   (<=) (FileBlock _) (NamedBlock _) = False
   (<=) _ _ = True
-{-# LINE 393 "org/doc.org" #-}
+{-# LINE 394 "org/doc.org" #-}
 sourceBlockId :: SourceBlock -> Maybe SourceBlockId
 sourceBlockId SourceBlock{ blockName = (Just name) } = Just $ NamedBlock name
 sourceBlockId block = case headerArg ":tangle" block of
@@ -183,14 +184,14 @@ sourceBlockId block = case headerArg ":tangle" block of
     Just (SExpr []) -> Nothing
     Just (Atom f) -> Just $ FileBlock f
     Just e -> error $ "unsupported tangle destination: " ++ show e
-{-# LINE 408 "org/doc.org" #-}
+{-# LINE 409 "org/doc.org" #-}
 newtype CodeLine = CodeLine [CodeElement]
 data CodeElement = Literal P.SourcePos String
                  | SectionReference P.SourcePos Text
-{-# LINE 437 "org/doc.org" #-}
+{-# LINE 438 "org/doc.org" #-}
 data Text = Text [TextElement] deriving (Eq, Ord, Show)
 
-{-# LINE 439 "org/doc.org" #-}
+{-# LINE 440 "org/doc.org" #-}
 data TextElement =
   Bold Text
   | HyperLink String Text
@@ -202,12 +203,12 @@ data TextElement =
   | DisplayMath String
   | Verbatim String
   deriving (Eq, Ord, Show)
-{-# LINE 482 "org/doc.org" #-}
+{-# LINE 483 "org/doc.org" #-}
 trim :: Text -> Text
 trim (Text (Plain []:ys))       = trim $ Text ys
 trim (Text (Plain (' ':xs):ys)) = trim $ Text (Plain xs:ys)
 trim  t                         = t
-{-# LINE 492 "org/doc.org" #-}
+{-# LINE 493 "org/doc.org" #-}
 type DocumentPartition = Map.Map SourceBlockId [Section]
 {-# LINE 27 "org/doc.org" #-}
 instance Pretty Document where
@@ -255,17 +256,17 @@ instance Pretty SourceBlock where
              , ("location", pretty . blockLocation)
              , ("lines", pretty . blockLines)
              ]
-{-# LINE 419 "org/doc.org" #-}
+{-# LINE 420 "org/doc.org" #-}
 instance Pretty CodeLine where
   pretty (CodeLine xs) = pretty xs
 
-{-# LINE 422 "org/doc.org" #-}
+{-# LINE 423 "org/doc.org" #-}
 instance Pretty CodeElement where
   pretty (Literal p s) =
     PP.parens $ PP.hcat [pretty p, PP.colon, pretty s]
   pretty (SectionReference p t) =
     PP.hcat [pretty p, PP.colon, PP.char '〈', pretty t, PP.char '〉']
-{-# LINE 458 "org/doc.org" #-}
+{-# LINE 459 "org/doc.org" #-}
 instance Pretty TextElement where
   pretty = \case
     (Bold a)          -> pretty' "bold" a
@@ -1201,7 +1202,7 @@ main = do
 
 {-# LINE 15 "org/weave.org" #-}
   let part = 
-{-# LINE 497 "org/doc.org" #-}
+{-# LINE 498 "org/doc.org" #-}
              ((Map.fromList . map (\bs -> (fst (head bs), map snd bs)))
                   :: [[(SourceBlockId, Section)]] -> DocumentPartition)
                . (groupWith fst
