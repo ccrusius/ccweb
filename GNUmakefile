@@ -39,13 +39,9 @@ test_cctangle: bin/cctangle
 	stack exec cctangle -- -IOn tests/tangle.org >/dev/null
 	stack exec cctangle -- -IOn ccweb.org >/dev/null
 	stack exec cctangle -- tests/tangle.org >/dev/null
-	${DIFF} tests/ref/tangle001.hs tests/out/tangle001.hs
-	${DIFF} tests/ref/tangle002.hs tests/out/tangle002.hs
-	${DIFF} tests/ref/tangle003.hs tests/out/tangle003.hs
-	${DIFF} tests/ref/tangle004.hs tests/out/tangle004.hs
-	${DIFF} tests/ref/tangle005.hs tests/out/tangle005.hs
-	${DIFF} tests/ref/tangle006.cf tests/out/tangle006.cf
-	${DIFF} tests/ref/tangle007.hs tests/out/tangle007.hs
+	for out in $(shell stack exec cctangle -- -Oq tests/tangle.org); do \
+		echo "$$out..." && ${DIFF} $${out/out/ref} $$out ; \
+	done
 	@rm -f tests/out/tangle*
 
 test_ccweave: bin/ccweave
