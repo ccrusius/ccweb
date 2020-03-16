@@ -1,6 +1,7 @@
 #+TITLE: Weaving test number 1
 #+AUTHOR: Cesar Crusius
 #+STARTUP: indent
+#+TeX_HEADER: \secpagedepth=1
 
 * Section with sub-sections
 

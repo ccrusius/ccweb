@@ -45,14 +45,15 @@ data Document = Document
 {-# LINE 40 "org/doc.org" #-}
 data Keyword = AuthorKeyword Text
              | PropertyKeyword Properties
+             | TeXHeaderKeyword String
              | TitleKeyword Text
              | OtherKeyword String
-{-# LINE 62 "org/doc.org" #-}
+{-# LINE 64 "org/doc.org" #-}
 headerProperties :: [Keyword] -> Properties
 headerProperties = foldl acc mempty where
     acc a (PropertyKeyword p) = Map.union p a
     acc a _ = a
-{-# LINE 79 "org/doc.org" #-}
+{-# LINE 81 "org/doc.org" #-}
 data Section = Section
   { sectionNumber :: Int
   , sectionHeadline :: Headline
@@ -61,92 +62,92 @@ data Section = Section
   , sectionProps :: Properties
   , sectionDerivedProperties :: Properties
   }
-{-# LINE 111 "org/doc.org" #-}
+{-# LINE 113 "org/doc.org" #-}
 data Headline = Headline Int Text | EmptyHeadline deriving Show
-{-# LINE 133 "org/doc.org" #-}
+{-# LINE 135 "org/doc.org" #-}
 type Property   = Map.Map String SExpr
 type Properties = Map.Map String Property
-{-# LINE 142 "org/doc.org" #-}
+{-# LINE 144 "org/doc.org" #-}
 data SExpr =
   Atom String
   | IntAtom Int
   | SExpr [SExpr]
   deriving (Eq, Ord)
-{-# LINE 154 "org/doc.org" #-}
+{-# LINE 156 "org/doc.org" #-}
 fromBool :: Bool -> SExpr
 fromBool False = SExpr []
 fromBool True = Atom "t"
-{-# LINE 165 "org/doc.org" #-}
+{-# LINE 167 "org/doc.org" #-}
 toBool :: SExpr -> Bool
 toBool (Atom _) = True
 toBool (IntAtom _) = True
 toBool _ = False
-{-# LINE 200 "org/doc.org" #-}
+{-# LINE 202 "org/doc.org" #-}
 class Eval a where
   eval :: ParserState -> a -> a
-{-# LINE 208 "org/doc.org" #-}
+{-# LINE 210 "org/doc.org" #-}
 instance Eval Property where; eval s = Map.map (eval s)
 instance Eval Properties where; eval s = Map.map (eval s)
-{-# LINE 217 "org/doc.org" #-}
+{-# LINE 219 "org/doc.org" #-}
 instance Eval SExpr where
-{-# LINE 225 "org/doc.org" #-}
+{-# LINE 227 "org/doc.org" #-}
   eval s (SExpr [Atom "identity", expr]) = eval s expr
-{-# LINE 233 "org/doc.org" #-}
+{-# LINE 235 "org/doc.org" #-}
   eval _ (Atom ('#':'o':x:y:z:[])) =
     IntAtom $ 8 * ((8 * oct x) + oct y) + oct z
     where oct c = ord c - ord '0'
-{-# LINE 242 "org/doc.org" #-}
+{-# LINE 244 "org/doc.org" #-}
   eval s (SExpr [Atom "eq", e1, e2]) = fromBool $ (eval s e1) == (eval s e2)
   
-{-# LINE 244 "org/doc.org" #-}
+{-# LINE 246 "org/doc.org" #-}
   eval s (SExpr [Atom "string-prefix-p", prefix, expr]) =
     case (eval s prefix, eval s expr) of
       (Atom s', Atom str) -> fromBool $ isPrefixOf s' str
       (e1, e2) -> SExpr [Atom "string-prefix-p", e1, e2]
   
-{-# LINE 249 "org/doc.org" #-}
+{-# LINE 251 "org/doc.org" #-}
   eval s (SExpr [Atom "string-suffix-p", suffix, expr]) =
     case (eval s suffix, eval s expr) of
       (Atom s', Atom str) -> fromBool $ isSuffixOf s' str
       (e1, e2) -> SExpr [Atom "string-suffix-p", e1, e2]
-{-# LINE 259 "org/doc.org" #-}
+{-# LINE 261 "org/doc.org" #-}
   eval s (SExpr [Atom "not", expr]) =
     fromBool . not . toBool . eval s $ expr
   
-{-# LINE 262 "org/doc.org" #-}
+{-# LINE 264 "org/doc.org" #-}
   eval s (SExpr (Atom "and" : exprs)) =
     fromBool . and . map (toBool . eval s) $ exprs
   
-{-# LINE 265 "org/doc.org" #-}
+{-# LINE 267 "org/doc.org" #-}
   eval s (SExpr (Atom "or" : exprs)) =
     fromBool . or . map (toBool . eval s) $ exprs
-{-# LINE 273 "org/doc.org" #-}
+{-# LINE 275 "org/doc.org" #-}
   eval s (SExpr [Atom "when", expr, result]) =
     if toBool (eval s expr)
     then eval s result
     else fromBool False
   
-{-# LINE 278 "org/doc.org" #-}
+{-# LINE 280 "org/doc.org" #-}
   eval s (SExpr [Atom "unless", expr, result]) =
     if toBool (eval s expr)
     then fromBool False
     else eval s result
-{-# LINE 289 "org/doc.org" #-}
+{-# LINE 291 "org/doc.org" #-}
   eval s expr = Map.findWithDefault expr expr (evalContext s)
-{-# LINE 302 "org/doc.org" #-}
+{-# LINE 304 "org/doc.org" #-}
 class HeaderArgs a where
   headerArgs :: a -> Property
   headerArg :: String -> a -> Maybe SExpr
   headerArg k a = Map.lookup k $ headerArgs a
 
-{-# LINE 307 "org/doc.org" #-}
+{-# LINE 309 "org/doc.org" #-}
 instance HeaderArgs Properties where
   headerArgs = Map.findWithDefault Map.empty "header-args"
 
-{-# LINE 310 "org/doc.org" #-}
+{-# LINE 312 "org/doc.org" #-}
 instance HeaderArgs Section where
   headerArgs = headerArgs . sectionDerivedProperties
-{-# LINE 325 "org/doc.org" #-}
+{-# LINE 327 "org/doc.org" #-}
 data SourceBlock = SourceBlock
   { blockName :: Maybe Text
   , blockLanguage :: String
@@ -155,10 +156,10 @@ data SourceBlock = SourceBlock
   , blockProperties :: Property
   , blockDerivedProperties :: Property
   }
-{-# LINE 354 "org/doc.org" #-}
+{-# LINE 356 "org/doc.org" #-}
 instance HeaderArgs SourceBlock where
   headerArgs = blockDerivedProperties
-{-# LINE 363 "org/doc.org" #-}
+{-# LINE 365 "org/doc.org" #-}
 inheritedProperty :: String -> Stack SourceBlock -> Maybe SExpr
 inheritedProperty _ (Stack []) = Nothing
 inheritedProperty arg (Stack [x]) = headerArg arg x
@@ -166,16 +167,16 @@ inheritedProperty arg stack =
   case Map.lookup arg (blockProperties $ top stack) of
     Nothing -> inheritedProperty arg (pop stack)
     result -> result
-{-# LINE 379 "org/doc.org" #-}
+{-# LINE 381 "org/doc.org" #-}
 data SourceBlockId = FileBlock FilePath | NamedBlock Text deriving Eq
 
-{-# LINE 381 "org/doc.org" #-}
+{-# LINE 383 "org/doc.org" #-}
 instance Ord SourceBlockId where
   (<=) (FileBlock p1) (FileBlock p2) = p1 <= p2
   (<=) (NamedBlock p1) (NamedBlock p2) = p1 <= p2
   (<=) (FileBlock _) (NamedBlock _) = False
   (<=) _ _ = True
-{-# LINE 394 "org/doc.org" #-}
+{-# LINE 396 "org/doc.org" #-}
 sourceBlockId :: SourceBlock -> Maybe SourceBlockId
 sourceBlockId SourceBlock{ blockName = (Just name) } = Just $ NamedBlock name
 sourceBlockId block = case headerArg ":tangle" block of
@@ -184,14 +185,14 @@ sourceBlockId block = case headerArg ":tangle" block of
     Just (SExpr []) -> Nothing
     Just (Atom f) -> Just $ FileBlock f
     Just e -> error $ "unsupported tangle destination: " ++ show e
-{-# LINE 409 "org/doc.org" #-}
+{-# LINE 411 "org/doc.org" #-}
 newtype CodeLine = CodeLine [CodeElement]
 data CodeElement = Literal P.SourcePos String
                  | SectionReference P.SourcePos Text
-{-# LINE 438 "org/doc.org" #-}
+{-# LINE 440 "org/doc.org" #-}
 data Text = Text [TextElement] deriving (Eq, Ord, Show)
 
-{-# LINE 440 "org/doc.org" #-}
+{-# LINE 442 "org/doc.org" #-}
 data TextElement =
   Bold Text
   | HyperLink String Text
@@ -203,12 +204,12 @@ data TextElement =
   | DisplayMath String
   | Verbatim String
   deriving (Eq, Ord, Show)
-{-# LINE 483 "org/doc.org" #-}
+{-# LINE 485 "org/doc.org" #-}
 trim :: Text -> Text
 trim (Text (Plain []:ys))       = trim $ Text ys
 trim (Text (Plain (' ':xs):ys)) = trim $ Text (Plain xs:ys)
 trim  t                         = t
-{-# LINE 493 "org/doc.org" #-}
+{-# LINE 495 "org/doc.org" #-}
 type DocumentPartition = Map.Map SourceBlockId [Section]
 {-# LINE 27 "org/doc.org" #-}
 instance Pretty Document where
@@ -216,13 +217,14 @@ instance Pretty Document where
              [ ("keywords", pretty . keywords)
              , ("sections", pretty . sections)
              ]
-{-# LINE 50 "org/doc.org" #-}
+{-# LINE 51 "org/doc.org" #-}
 instance Pretty Keyword where
   pretty (AuthorKeyword a) = PP.hsep [PP.text "Author:", pretty a]
   pretty (PropertyKeyword a) = PP.hsep [PP.text "Properties:", pretty a]
+  pretty (TeXHeaderKeyword a) = PP.hsep [PP.text "TeX:", pretty a]
   pretty (TitleKeyword a) = PP.hsep [PP.text "Title:", pretty a]
   pretty (OtherKeyword a) = PP.hsep [PP.text "Other:", pretty a]
-{-# LINE 93 "org/doc.org" #-}
+{-# LINE 95 "org/doc.org" #-}
 instance Pretty Section where
   pretty = prettyStruct "Section"
              [ ("number", pretty . sectionNumber)
@@ -232,21 +234,21 @@ instance Pretty Section where
              , ("properties", pretty . sectionProps)
              , ("derived properties", pretty . sectionDerivedProperties)
              ]
-{-# LINE 118 "org/doc.org" #-}
+{-# LINE 120 "org/doc.org" #-}
 instance Pretty Headline where
   pretty (Headline l t) = PP.hcat [PP.char '*', PP.braces (pretty l), pretty t]
   pretty EmptyHeadline = PP.char '§'
-{-# LINE 176 "org/doc.org" #-}
+{-# LINE 178 "org/doc.org" #-}
 instance Show SExpr where
   show (Atom x) = x
   show (IntAtom x) = show x
   show (SExpr []) = "nil"
   show (SExpr xs) = "(" ++ intercalate " " (map show xs) ++ ")"
 
-{-# LINE 182 "org/doc.org" #-}
+{-# LINE 184 "org/doc.org" #-}
 instance Pretty SExpr where
   pretty = PP.text . show
-{-# LINE 339 "org/doc.org" #-}
+{-# LINE 341 "org/doc.org" #-}
 instance Pretty SourceBlock where
   pretty = prettyStruct "SourceBlock"
              [ ("name", pretty . blockName)
@@ -256,17 +258,17 @@ instance Pretty SourceBlock where
              , ("location", pretty . blockLocation)
              , ("lines", pretty . blockLines)
              ]
-{-# LINE 420 "org/doc.org" #-}
+{-# LINE 422 "org/doc.org" #-}
 instance Pretty CodeLine where
   pretty (CodeLine xs) = pretty xs
 
-{-# LINE 423 "org/doc.org" #-}
+{-# LINE 425 "org/doc.org" #-}
 instance Pretty CodeElement where
   pretty (Literal p s) =
     PP.parens $ PP.hcat [pretty p, PP.colon, pretty s]
   pretty (SectionReference p t) =
     PP.hcat [pretty p, PP.colon, PP.char '〈', pretty t, PP.char '〉']
-{-# LINE 459 "org/doc.org" #-}
+{-# LINE 461 "org/doc.org" #-}
 instance Pretty TextElement where
   pretty = \case
     (Bold a)          -> pretty' "bold" a
@@ -577,29 +579,38 @@ readOrgFile lvl fp = do
   return (ingested, doc)
 {-# LINE 390 "org/parser.org" #-}
 instance Parse Keyword where
-  parse = propertyKeyword <|> titleKeyword <|> authorKeyword <|> otherKeyword
+  parse = propertyKeyword
+          <|> texKeyword
+          <|> titleKeyword
+          <|> authorKeyword
+          <|> otherKeyword
     where
       propertyKeyword = do
         PropertyKeyword <$> 
-{-# LINE 429 "org/parser.org" #-}
+{-# LINE 438 "org/parser.org" #-}
                             do
                               _ <- P.try (P.string "#+PROPERTY:") *> spaces
                               liftM2 Map.singleton
                                 (symbol <* spaces1)
                                 (
-{-# LINE 456 "org/parser.org" #-}
+{-# LINE 465 "org/parser.org" #-}
                                  line (Map.fromList
                                        <$> P.sepEndBy
                                         (liftM2 (,)
                                           (symbol <* (spaces1 <|> (spaces *> P.char '=' *> spaces)))
                                           (parse :: Parser SExpr))
                                         spaces1)
-{-# LINE 433 "org/parser.org" #-}
+{-# LINE 442 "org/parser.org" #-}
                                                 )
-{-# LINE 395 "org/parser.org" #-}
+{-# LINE 399 "org/parser.org" #-}
       authorKeyword = do
         keywordStart "#+AUTHOR:"
         AuthorKeyword <$> parse
+      texKeyword = do
+        keywordStart "#+TeX_HEADER:"
+        t <- P.many anyChar
+        _ <- endOfLine
+        return $ TeXHeaderKeyword t
       titleKeyword = do
         keywordStart "#+TITLE:"
         TitleKeyword <$> parse
@@ -609,101 +620,101 @@ instance Parse Keyword where
         _ <- endOfLine
         return $ OtherKeyword t
       keywordStart h = void $ P.try (P.string h *> spaces)
-{-# LINE 416 "org/parser.org" #-}
+{-# LINE 425 "org/parser.org" #-}
 instance Parse Properties where
   parse = do
     _ <- parserTrace "Properties" ()
     ps <- (
-{-# LINE 429 "org/parser.org" #-}
+{-# LINE 438 "org/parser.org" #-}
            do
              _ <- P.try (P.string "#+PROPERTY:") *> spaces
              liftM2 Map.singleton
                (symbol <* spaces1)
                (
-{-# LINE 456 "org/parser.org" #-}
+{-# LINE 465 "org/parser.org" #-}
                 line (Map.fromList
                       <$> P.sepEndBy
                        (liftM2 (,)
                          (symbol <* (spaces1 <|> (spaces *> P.char '=' *> spaces)))
                          (parse :: Parser SExpr))
                        spaces1)
-{-# LINE 433 "org/parser.org" #-}
+{-# LINE 442 "org/parser.org" #-}
                                )
-{-# LINE 419 "org/parser.org" #-}
+{-# LINE 428 "org/parser.org" #-}
                                 ) <|> (
-{-# LINE 441 "org/parser.org" #-}
+{-# LINE 450 "org/parser.org" #-}
                                        do
                                          _ <- P.try (spaces *> P.string ":PROPERTIES:" *> spaces *> endOfLine)
                                          Map.fromList <$> P.manyTill
                                            (liftM2 (,)
                                               (spaces *> (enclosed ':' <* spaces))
                                               (
-{-# LINE 456 "org/parser.org" #-}
+{-# LINE 465 "org/parser.org" #-}
                                                line (Map.fromList
                                                      <$> P.sepEndBy
                                                       (liftM2 (,)
                                                         (symbol <* (spaces1 <|> (spaces *> P.char '=' *> spaces)))
                                                         (parse :: Parser SExpr))
                                                       spaces1)
-{-# LINE 446 "org/parser.org" #-}
+{-# LINE 455 "org/parser.org" #-}
                                                               ))
                                            (P.try (spaces *> P.string ":END:" *> spaces *> endOfLine))
-{-# LINE 419 "org/parser.org" #-}
+{-# LINE 428 "org/parser.org" #-}
                                                                                                       )
     _ <- parserTrace "/Properties" ()
     return ps
-{-# LINE 472 "org/parser.org" #-}
+{-# LINE 481 "org/parser.org" #-}
 instance Parse SExpr where
   parse = (
-{-# LINE 482 "org/parser.org" #-}
+{-# LINE 491 "org/parser.org" #-}
            SExpr <$> ( P.try (P.char '(')
                         *> spaces
                         *> (P.sepEndBy (parse :: Parser SExpr) spaces1 <* P.char ')')
                       )
-{-# LINE 473 "org/parser.org" #-}
+{-# LINE 482 "org/parser.org" #-}
                        )
           <|> (
-{-# LINE 492 "org/parser.org" #-}
+{-# LINE 501 "org/parser.org" #-}
                P.try (P.string "nil" *> P.lookAhead P.space *> return (SExpr []))
                <|>
                P.try (P.string "no" *> P.lookAhead P.space *> return (SExpr []))
                <|>
                P.try (P.string "yes" *> P.lookAhead P.space *> return (Atom "t"))
-{-# LINE 474 "org/parser.org" #-}
+{-# LINE 483 "org/parser.org" #-}
                                                                                  )
           <|> (
-{-# LINE 504 "org/parser.org" #-}
+{-# LINE 513 "org/parser.org" #-}
                Atom <$> (enclosed '"' <|> (char '\'' *> symbol) <|> symbol)
-{-# LINE 475 "org/parser.org" #-}
+{-# LINE 484 "org/parser.org" #-}
                                                                            )
-{-# LINE 601 "org/parser.org" #-}
+{-# LINE 610 "org/parser.org" #-}
 textFromString :: P.SourcePos -> String -> Text
 textFromString p s = fromEither $ P.runParser
     (parse :: Parser Text)
     initialParserState
     (P.sourceName p)
     (OrgLines [OrgLine p s])
-{-# LINE 615 "org/parser.org" #-}
+{-# LINE 624 "org/parser.org" #-}
 textTill :: Parser end -> Parser Text
 textTill end = do
   _ <- parserTrace "TextTill" ()
   p <- P.getPosition
   t <- P.manyTill anyChar end
   parserTrace "/TextTill" $ textFromString p t
-{-# LINE 665 "org/parser.org" #-}
+{-# LINE 674 "org/parser.org" #-}
 instance Parse Text where
   parse = do
     _ <- parserTrace "Text" ()
     ret <- reverse . snd <$> scanText ([], [])
     failWhen (null ret) P.<?> "empty text"
     parserTrace "/Text" $ Text ret
-{-# LINE 697 "org/parser.org" #-}
+{-# LINE 706 "org/parser.org" #-}
 scanText :: (String, [TextElement]) -> Parser (String, [TextElement])
 scanText acc@(plain, text) =
-{-# LINE 723 "org/parser.org" #-}
+{-# LINE 732 "org/parser.org" #-}
   (P.eof *> parserTrace "Text:/EOF"
     ((
-{-# LINE 681 "org/parser.org" #-}
+{-# LINE 690 "org/parser.org" #-}
       \(newChar, newMarkup) -> case (newChar, fst acc, newMarkup) of
         (Nothing, [], Nothing) -> ([], snd acc)
         (Nothing, cs, Nothing) -> ([], Plain (reverse cs) : snd acc)
@@ -711,11 +722,11 @@ scanText acc@(plain, text) =
         (Nothing, [], Just m)  -> ([], m : snd acc)
         (Nothing, cs, Just m)  -> ([], m : Plain (reverse cs) : snd acc)
         (Just c,  cs, Just m)  -> ([], m : Plain (reverse $ c : cs) : snd acc)
-{-# LINE 724 "org/parser.org" #-}
+{-# LINE 733 "org/parser.org" #-}
                                                                               ) (Nothing, Nothing)))
   <|> (endOfLine *> parserTrace "Text:/EOL"
     ((
-{-# LINE 681 "org/parser.org" #-}
+{-# LINE 690 "org/parser.org" #-}
       \(newChar, newMarkup) -> case (newChar, fst acc, newMarkup) of
         (Nothing, [], Nothing) -> ([], snd acc)
         (Nothing, cs, Nothing) -> ([], Plain (reverse cs) : snd acc)
@@ -723,11 +734,11 @@ scanText acc@(plain, text) =
         (Nothing, [], Just m)  -> ([], m : snd acc)
         (Nothing, cs, Just m)  -> ([], m : Plain (reverse cs) : snd acc)
         (Just c,  cs, Just m)  -> ([], m : Plain (reverse $ c : cs) : snd acc)
-{-# LINE 726 "org/parser.org" #-}
+{-# LINE 735 "org/parser.org" #-}
                                                                               ) (Nothing, Nothing)))
-{-# LINE 700 "org/parser.org" #-}
+{-# LINE 709 "org/parser.org" #-}
   <|> (
-{-# LINE 734 "org/parser.org" #-}
+{-# LINE 743 "org/parser.org" #-}
        do
          beginningOfLine
          P.lookAhead . P.choice $ map P.try
@@ -736,7 +747,7 @@ scanText acc@(plain, text) =
            , void (parse :: Parser Headline)
            ]
          parserTrace "Text:/Break" $ (
-{-# LINE 681 "org/parser.org" #-}
+{-# LINE 690 "org/parser.org" #-}
                                       \(newChar, newMarkup) -> case (newChar, fst acc, newMarkup) of
                                         (Nothing, [], Nothing) -> ([], snd acc)
                                         (Nothing, cs, Nothing) -> ([], Plain (reverse cs) : snd acc)
@@ -744,24 +755,24 @@ scanText acc@(plain, text) =
                                         (Nothing, [], Just m)  -> ([], m : snd acc)
                                         (Nothing, cs, Just m)  -> ([], m : Plain (reverse cs) : snd acc)
                                         (Just c,  cs, Just m)  -> ([], m : Plain (reverse $ c : cs) : snd acc)
-{-# LINE 741 "org/parser.org" #-}
+{-# LINE 750 "org/parser.org" #-}
                                                                                                               ) (Nothing, Nothing)
-{-# LINE 700 "org/parser.org" #-}
+{-# LINE 709 "org/parser.org" #-}
                                                                                                                                   )
   <|>
   (do
       markup <- P.try (
-{-# LINE 645 "org/parser.org" #-}
+{-# LINE 654 "org/parser.org" #-}
                        do
                          url <- P.string "[[" *> many1Till anyChar (P.string "][" <|> P.string "]]")
                          txt <- P.string "][" <|> P.string "]]" >>= \case
                            "]]" -> return $ Text [Verbatim url]
                            _    -> textTill (P.string "]]")
                          return $ HyperLink url txt
-{-# LINE 703 "org/parser.org" #-}
+{-# LINE 712 "org/parser.org" #-}
                                                    ) >>= parserTrace "Text/Link"
       scanText $ (
-{-# LINE 681 "org/parser.org" #-}
+{-# LINE 690 "org/parser.org" #-}
                   \(newChar, newMarkup) -> case (newChar, fst acc, newMarkup) of
                     (Nothing, [], Nothing) -> ([], snd acc)
                     (Nothing, cs, Nothing) -> ([], Plain (reverse cs) : snd acc)
@@ -769,13 +780,13 @@ scanText acc@(plain, text) =
                     (Nothing, [], Just m)  -> ([], m : snd acc)
                     (Nothing, cs, Just m)  -> ([], m : Plain (reverse cs) : snd acc)
                     (Just c,  cs, Just m)  -> ([], m : Plain (reverse $ c : cs) : snd acc)
-{-# LINE 704 "org/parser.org" #-}
+{-# LINE 713 "org/parser.org" #-}
                                                                                           ) (Nothing, Just markup)
   )
   <|>
   (do
       markup <- P.try (
-{-# LINE 630 "org/parser.org" #-}
+{-# LINE 639 "org/parser.org" #-}
                        (DisplayMath <$>
                          (P.try (P.string "$$")
                           *> P.manyTill P.anyChar (P.try $ P.string "$$")))
@@ -784,10 +795,10 @@ scanText acc@(plain, text) =
                          (P.char '$'
                           *> P.manyTill P.anyChar (P.char '$')))
                        :: Parser TextElement
-{-# LINE 708 "org/parser.org" #-}
+{-# LINE 717 "org/parser.org" #-}
                                             ) >>= parserTrace "Text/TeX"
       scanText $ (
-{-# LINE 681 "org/parser.org" #-}
+{-# LINE 690 "org/parser.org" #-}
                   \(newChar, newMarkup) -> case (newChar, fst acc, newMarkup) of
                     (Nothing, [], Nothing) -> ([], snd acc)
                     (Nothing, cs, Nothing) -> ([], Plain (reverse cs) : snd acc)
@@ -795,47 +806,47 @@ scanText acc@(plain, text) =
                     (Nothing, [], Just m)  -> ([], m : snd acc)
                     (Nothing, cs, Just m)  -> ([], m : Plain (reverse cs) : snd acc)
                     (Just c,  cs, Just m)  -> ([], m : Plain (reverse $ c : cs) : snd acc)
-{-# LINE 709 "org/parser.org" #-}
+{-# LINE 718 "org/parser.org" #-}
                                                                                           ) (Nothing, Just markup)
   )
   <|>
   (do
       (maybePre, markup) <- (
-{-# LINE 577 "org/parser.org" #-}
+{-# LINE 586 "org/parser.org" #-}
                              P.try $ do
                                (pre, marker) <-
                                  (>>= parserTrace "Text:Markup:/Start")
                                  (
-{-# LINE 550 "org/parser.org" #-}
+{-# LINE 559 "org/parser.org" #-}
                                   P.try $ liftM2 (,)
                                     (
-{-# LINE 527 "org/parser.org" #-}
+{-# LINE 536 "org/parser.org" #-}
                                      (beginningOfLine *> return Nothing)
                                      <|> (Just <$> satisfy (\c -> isSpace c || elem c "({'\""))
                                      :: Parser (Maybe Char)
-{-# LINE 551 "org/parser.org" #-}
+{-# LINE 560 "org/parser.org" #-}
                                                            )
                                     (P.oneOf "*~/+=")
                                   :: Parser (Maybe Char, Char)
-{-# LINE 580 "org/parser.org" #-}
+{-# LINE 589 "org/parser.org" #-}
                                                               )
                                p <- P.getPosition
                                body <-
                                  (>>= parserTrace "Text:Markup:/BodyA")
                                  (manyTill anyChar (
-{-# LINE 562 "org/parser.org" #-}
+{-# LINE 571 "org/parser.org" #-}
                                                     P.try $
                                                       void (P.char marker)
                                                       <* P.lookAhead (
-{-# LINE 537 "org/parser.org" #-}
+{-# LINE 546 "org/parser.org" #-}
                                                                       (P.eof *> return Nothing)
                                                                       <|> Just <$> satisfy (\c -> isSpace c || elem c "-.,:!?)}'\"")
                                                                       <|> Just <$> endOfLine
                                                                       :: Parser (Maybe Char)
-{-# LINE 564 "org/parser.org" #-}
+{-# LINE 573 "org/parser.org" #-}
                                                                                             )
                                                     :: Parser ()
-{-# LINE 584 "org/parser.org" #-}
+{-# LINE 593 "org/parser.org" #-}
                                                                 ))
                                _ <- char marker
                                return . (pre,) $ case marker of
@@ -846,10 +857,10 @@ scanText acc@(plain, text) =
                                  '=' -> Verbatim body
                                  e   -> error $ "unknown markup marker '" ++ show e ++ "'"
                              :: Parser (Maybe Char, TextElement)
-{-# LINE 713 "org/parser.org" #-}
+{-# LINE 722 "org/parser.org" #-}
                                                                 ) >>= parserTrace "Text:/Markup"
       scanText $ (
-{-# LINE 681 "org/parser.org" #-}
+{-# LINE 690 "org/parser.org" #-}
                   \(newChar, newMarkup) -> case (newChar, fst acc, newMarkup) of
                     (Nothing, [], Nothing) -> ([], snd acc)
                     (Nothing, cs, Nothing) -> ([], Plain (reverse cs) : snd acc)
@@ -857,7 +868,7 @@ scanText acc@(plain, text) =
                     (Nothing, [], Just m)  -> ([], m : snd acc)
                     (Nothing, cs, Just m)  -> ([], m : Plain (reverse cs) : snd acc)
                     (Just c,  cs, Just m)  -> ([], m : Plain (reverse $ c : cs) : snd acc)
-{-# LINE 714 "org/parser.org" #-}
+{-# LINE 723 "org/parser.org" #-}
                                                                                           ) (maybePre, Just markup)
   )
   <|> (anyChar >>= scanText . (,text) . (:plain))
@@ -980,7 +991,7 @@ instance Parse SourceBlock where
     l  <- symbol <* spaces
     _ <- parserTrace "SourceBlock:Properties" ()
     ps <- 
-{-# LINE 456 "org/parser.org" #-}
+{-# LINE 465 "org/parser.org" #-}
           line (Map.fromList
                 <$> P.sepEndBy
                  (liftM2 (,)
@@ -1209,7 +1220,7 @@ main = do
                . (mapMaybe (\(i,ss) -> case i of; (FileBlock f) -> Just (f,ss); _ -> Nothing) . toList
                   :: DocumentPartition -> [(FilePath, [Section])])
                . (
-{-# LINE 498 "org/doc.org" #-}
+{-# LINE 500 "org/doc.org" #-}
                   ((Map.fromList . map (\bs -> (fst (head bs), map snd bs)))
                        :: [[(SourceBlockId, Section)]] -> DocumentPartition)
                     . (groupWith fst

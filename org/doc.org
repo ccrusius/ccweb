@@ -39,6 +39,7 @@ captured in the ~OtherKeyword~ catch-all.
 #+BEGIN_SRC haskell
 data Keyword = AuthorKeyword Text
              | PropertyKeyword Properties
+             | TeXHeaderKeyword String
              | TitleKeyword Text
              | OtherKeyword String
 #+END_SRC
@@ -50,6 +51,7 @@ Pretty-printing just goes over all the constructor alternatives.
 instance Pretty Keyword where
   pretty (AuthorKeyword a) = PP.hsep [PP.text "Author:", pretty a]
   pretty (PropertyKeyword a) = PP.hsep [PP.text "Properties:", pretty a]
+  pretty (TeXHeaderKeyword a) = PP.hsep [PP.text "TeX:", pretty a]
   pretty (TitleKeyword a) = PP.hsep [PP.text "Title:", pretty a]
   pretty (OtherKeyword a) = PP.hsep [PP.text "Other:", pretty a]
 #+END_SRC

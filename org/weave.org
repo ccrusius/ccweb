@@ -254,11 +254,19 @@ instance Weave Document where
     secs <- concat <$> mapM weave (sections doc)
     return $ unlines
       [ "\\input cwebmac"
+      , preamble
       , secs
       , "\\inx"
       , "\\fin"
       , "\\con"
       ]
+    where
+      preamble = unlines
+                 . catMaybes
+                 . map (\case
+                         TeXHeaderKeyword t -> Just t
+                         _ -> Nothing)
+                 $ keywords doc
 #+END_SRC
 
 #+NAME: Write =scn= file

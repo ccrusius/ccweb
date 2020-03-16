@@ -388,13 +388,22 @@ ones I
 #+NAME: Parser
 #+BEGIN_SRC haskell
 instance Parse Keyword where
-  parse = propertyKeyword <|> titleKeyword <|> authorKeyword <|> otherKeyword
+  parse = propertyKeyword
+          <|> texKeyword
+          <|> titleKeyword
+          <|> authorKeyword
+          <|> otherKeyword
     where
       propertyKeyword = do
         PropertyKeyword <$> <<Parse a =#+PROPERTY= line>>
       authorKeyword = do
         keywordStart "#+AUTHOR:"
         AuthorKeyword <$> parse
+      texKeyword = do
+        keywordStart "#+TeX_HEADER:"
+        t <- P.many anyChar
+        _ <- endOfLine
+        return $ TeXHeaderKeyword t
       titleKeyword = do
         keywordStart "#+TITLE:"
         TitleKeyword <$> parse
